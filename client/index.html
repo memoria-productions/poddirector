@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>PodDirector</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="logo">&#9673;</span> PodDirector</div>
+    <div class="seq" id="seqLabel">No sequence scanned</div>
+    <button id="btnScan" class="btn">Scan sequence</button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="multicam">Multicam</button>
+    <button class="tab" data-tab="cleanup">Cleanup</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <!-- ====================================================== MULTICAM -->
+  <section class="page active" id="page-multicam">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Speakers <small>one mic per person</small></h2>
+        <button id="btnAddSpeaker" class="btn ghost small">+ Speaker</button>
+      </div>
+      <div id="speakerList" class="rows"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Cameras <small>tick who each angle shows</small></h2>
+        <button id="btnAddCamera" class="btn ghost small">+ Camera</button>
+      </div>
+      <div id="cameraList" class="rows"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Cutting style</h2>
+        <div class="inline">
+          <select id="presetSelect"></select>
+          <button id="btnSavePreset" class="btn ghost small" title="Save these settings as a preset">Save</button>
+        </div>
+      </div>
+      <div id="styleControls"></div>
+    </div>
+
+    <div class="actions">
+      <button id="btnAnalyze" class="btn primary">Analyze waveforms</button>
+    </div>
+
+    <div class="card" id="vizCard">
+      <div class="card-head">
+        <h2>Preview <small id="vizHint">analyze to see the cut</small></h2>
+        <div class="inline">
+          <button id="zoomOut" class="btn ghost small" title="Zoom out">&minus;</button>
+          <button id="zoomFit" class="btn ghost small" title="Fit">Fit</button>
+          <button id="zoomIn" class="btn ghost small" title="Zoom in">+</button>
+        </div>
+      </div>
+      <canvas id="viz" height="220"></canvas>
+      <input type="range" id="vizScroll" min="0" max="1000" value="0" />
+      <div id="lockBar" class="lockbar hidden">
+        <span id="lockLabel">Selection</span>
+        <span id="lockButtons"></span>
+        <button id="lockClear" class="btn ghost small">Cancel</button>
+      </div>
+      <div id="lockList" class="locklist"></div>
+      <div id="stats" class="stats"></div>
+    </div>
+
+    <div class="actions two">
+      <button id="btnMarkers" class="btn" disabled>Preview as markers</button>
+      <button id="btnApply" class="btn primary" disabled>Build cut on a copy</button>
+    </div>
+    <div class="actions two">
+      <button id="btnClearMarkers" class="btn ghost small">Clear PodDirector markers</button>
+      <button id="btnExportPlan" class="btn ghost small" disabled>Export analysis for Claude</button>
+    </div>
+  </section>
+
+  <!-- ======================================================= CLEANUP -->
+  <section class="page" id="page-cleanup">
+    <div class="card">
+      <h2>Transcript</h2>
+      <p class="muted">Finds spots where someone said to cut, restarted a sentence, or went off the record.</p>
+      <div class="actions two">
+        <button id="btnTranscribe" class="btn primary">Transcribe timeline</button>
+        <label class="btn">Load SRT / VTT / TXT<input type="file" id="txFile" accept=".srt,.vtt,.txt,.json" hidden /></label>
+      </div>
+      <div id="txStatus" class="muted small"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Detection</h2></div>
+      <div id="cleanupControls"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Suggested cuts <small id="sugCount"></small></h2>
+        <div class="inline">
+          <button id="sugAll" class="btn ghost small">All</button>
+          <button id="sugNone" class="btn ghost small">None</button>
+        </div>
+      </div>
+      <div id="sugList" class="suglist"><div class="muted">No transcript loaded.</div></div>
+    </div>
+
+    <div class="actions two">
+      <button id="btnSugMarkers" class="btn primary" disabled>Mark selected on timeline</button>
+      <button id="btnSugClear" class="btn">Clear cleanup markers</button>
+    </div>
+    <div class="actions two">
+      <button id="btnSugCsv" class="btn ghost small" disabled>Export cut list (CSV)</button>
+      <button id="btnSugClaude" class="btn ghost small" disabled>Copy for Claude review</button>
+    </div>
+  </section>
+
+  <!-- ====================================================== SETTINGS -->
+  <section class="page" id="page-settings">
+    <div class="card">
+      <h2>Engine</h2>
+      <div class="kv"><span>ffmpeg</span><span id="ffmpegPath" class="mono">checking&hellip;</span></div>
+      <label class="field">Custom ffmpeg path <input id="ffmpegCustom" placeholder="Leave blank to use the bundled copy" /></label>
+      <div class="kv"><span>Transcriber</span><span id="whisperPath" class="mono">checking&hellip;</span></div>
+      <div class="kv"><span>Model</span><span id="modelPath" class="mono"></span></div>
+      <label class="field">Custom model (.bin) <input id="modelCustom" placeholder="Optional: e.g. ggml-small.en.bin for more accuracy" /></label>
+      <label class="field">Vocabulary hint for transcription <input id="txPrompt" placeholder="Names, jargon: Memoria Press, Latin, Highlands" /></label>
+      <div class="actions two">
+        <button id="btnRecheck" class="btn">Re-check tools</button>
+        <button id="btnClearCache" class="btn ghost">Clear waveform cache</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Files</h2>
+      <p class="muted small">Presets, exports and cut lists are saved to <span id="docsDir" class="mono"></span></p>
+      <div class="actions two">
+        <button id="btnOpenDocs" class="btn ghost small">Open folder</button>
+        <label class="btn ghost small">Import settings JSON<input type="file" id="importFile" accept=".json" hidden /></label>
+      </div>
+    </div>
+    <div class="card about">
+      <p class="muted small">PodDirector <span id="ver"></span> &middot; runs fully offline &middot; FFmpeg (LGPL) &middot; whisper.cpp (MIT)</p>
+    </div>
+  </section>
+
+  <footer class="status">
+    <div class="progress"><div id="progFill"></div></div>
+    <div id="statusText">Ready</div>
+    <button id="btnLog" class="btn ghost small">Log</button>
+  </footer>
+  <pre id="log" class="log hidden"></pre>
+</div>
+
+<script src="./lib/CSInterface.js"></script>
+<script src="../engine/director.js"></script>
+<script src="../engine/transcript.js"></script>
+<script src="../engine/analyzer.js"></script>
+<script src="../engine/transcriber.js"></script>
+<script src="./ui-config.js"></script>
+<script src="./demo.js"></script>
+<script src="./viz.js"></script>
+<script src="./panel.js"></script>
+</body>
+</html>
