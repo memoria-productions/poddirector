@@ -5,7 +5,7 @@
     function at(i, name) { return { index: i, name: name, muted: false, clips: [{ name: name + ".wav", startSec: 0, endSec: DUR, inPointSec: 0, mediaPath: "/demo/" + name + ".wav", speed: 1 }] }; }
     return {
       name: "Demo Episode 42", sequenceID: "demo", fps: 29.97, ticksPerFrame: "8475667200", durationSec: DUR,
-      audioTracks: [at(0, "Host mic"), at(1, "Cohost mic"), at(2, "Guest mic")],
+      audioTracks: [at(0, "VOX1"), at(1, "VOX2"), at(2, "VOX3"), at(3, "SFX"), at(4, "Music")],
       videoTracks: [
         { index: 0, name: "Wide", clipCount: 1, firstClip: "CAM_WIDE.mp4", endSec: DUR, mediaPaths: ["/demo/wide.mp4"] },
         { index: 1, name: "Host CU", clipCount: 1, firstClip: "CAM_A.mp4", endSec: DUR, mediaPaths: ["/demo/a.mp4"] },

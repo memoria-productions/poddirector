@@ -39,21 +39,25 @@ Tips:
 
 ## 3. Multicam workflow
 
-1. **Scan sequence** reads the active sequence and makes a first guess at who's who.
-2. **Speakers:** name each mic and check its track and channel.
-3. **Cameras:** for each camera, tick the people it shows.
+1. **Scan sequence** reads the active sequence and makes a first guess at who's who. Audio tracks with **VOX** in their name (VOX1, VOX2…) are taken as the speaker mics first. Tracks named like SFX, music, mix, or room are skipped.
+2. **Show setup** (top card) chooses how the speakers and cameras are set up:
+   - **Auto-detect** uses every voice track it finds.
+   - **1 / 2 / 3 / 4+ subjects** takes that many VOX tracks and switches the cutting style to one tuned for that many people.
+   - **Save as…** stores the current speakers (names, tracks, per-speaker settings), cameras, and style as a named setup, such as "Classical et cetera". Pick it from the list on any episode. Tracks are matched by name, so VOX1 is always Martin. Once saved, a setup is **applied automatically** to new sequences whose track names match. The trash icon next to a saved setup deletes it.
+3. **Speakers:** name each mic and check its track and channel. **+ Speaker** adds one, the trash icon next to ⚙ removes one (after you confirm), and ⚙ opens that speaker's settings.
+4. **Cameras:** for each camera, tick the people it shows. The trash icon removes a camera.
    - One person ticked = that person's **close-up**.
    - Everyone ticked = the **wide** shot.
    - Two people ticked = a **two-shot**, used when exactly those two talk over each other.
    - A person with two close-up cameras gets **angle rotation** between them.
    - **Follows speaker:** for a camera whose operator re-frames on whoever is talking. It counts as a close-up of every speaker, but never as a group shot or a listener reaction.
-   - **Moving camera:** for a dolly, slider, gimbal, or handheld camera. PodDirector checks its picture and only cuts to it when it's steady (section 4, *Moving cameras*).
-4. **Analyze waveforms** reads the mic audio. It also checks any moving cameras for movement, which decodes their video at low resolution: allow a few minutes per hour of footage the first time. The first run takes a little while. After that the results are cached, so changing settings is instant.
-5. **Tune the style** (section 4). The preview strip updates live.
+   - **Check for movement:** turn this on for a dolly, slider, gimbal, or handheld camera. PodDirector reads its picture and only cuts to it when it's steady (section 4, *Moving cameras*). Leave it off for locked-off cameras like a static wide: that skips the video analysis for them, and they're never held back.
+5. **Analyze waveforms** reads the mic audio. It also checks any moving cameras for movement, which decodes their video at low resolution: allow a few minutes per hour of footage the first time. The first run takes a little while. After that the results are cached, so changing settings is instant.
+6. **Tune the style** (section 4). The preview strip updates live.
    - **Click** the preview to move Premiere's playhead to that moment.
    - **Drag** across a range, then pick a camera to **lock** it there. "Auto" unlocks it.
-6. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
-7. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.** To try a different style, build again.
+7. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
+8. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.** To try a different style, build again.
 
 ---
 
@@ -92,7 +96,7 @@ These are listener reactions like "Yeah", laughs, and quick remarks.
 
 ### Moving cameras
 
-This group appears once a camera is marked **Moving camera**. PodDirector measures how much the *camera* moves (pan, tilt, dolly, push-in, shake) separately from how much the *people* move. Someone gesturing or leaning in front of a steady camera doesn't count as camera movement. The preview shows a movement lane for each moving camera: **green** = steady, **amber** = slow move, **red** = big move.
+This group appears once **Check for movement** is on for a camera. PodDirector measures how much the *camera* moves (pan, tilt, dolly, push-in, shake) separately from how much the *people* move. Someone gesturing or leaning in front of a steady camera doesn't count as camera movement. The preview shows a movement lane for each moving camera: **green** = steady, **amber** = slow move, **red** = big move.
 
 - **Steady below / Big move above:** the two thresholds, in percent of frame width per second. Between them is a *slow move*, such as a gentle push-in or a drift.
 - **Settle time:** how long the camera must be steady before PodDirector cuts to it, so you never land on the tail end of a move.
@@ -100,7 +104,7 @@ This group appears once a camera is marked **Moving camera**. PodDirector measur
 - **Slow moves on air:** keep gentle push-ins on screen once you're on that camera, or cut away from any movement.
 - **Leave move early by:** how early to cut away before a big move starts.
 
-Typical setup, one static wide plus one operated dolly camera: mark the dolly **Moving camera** and **Follows speaker**. The edit then reads: dolly on whoever is talking when it's steady, the wide while the operator re-frames, back to the dolly once it settles.
+Typical setup, one static wide plus one operated dolly camera: turn on **Check for movement** and **Follows speaker** for the dolly, and leave both off for the wide. The edit then reads: dolly on whoever is talking when it's steady, the wide while the operator re-frames, back to the dolly once it settles.
 
 If the camera row says *plain background, treated as steady*, the shot doesn't have enough detail behind the subject (a bare wall, a seamless backdrop) to measure camera movement. Watch the result there, and lock any bad moments by dragging on the preview.
 
@@ -149,7 +153,18 @@ Add names and jargon under Settings → *Vocabulary hint* to improve transcripti
 
 ---
 
-## 6. Troubleshooting
+## 6. Updating
+
+PodDirector checks for a newer version when the panel opens (at most twice a day). When one is available, a blue bar at the top offers **Update now**. That downloads and installs it, and then you restart Premiere Pro. You can also check by hand under **Settings → Updates**.
+
+Updates can come from two places:
+
+- **GitHub releases.** This only works if the GitHub repository is public.
+- **An update folder,** such as a shared drive. Put `PodDirector-x.y.z-Windows.zip` files there, and every machine pointed at that folder picks up the newest one. Use this if the repository is private.
+
+---
+
+## 7. Troubleshooting
 
 | Problem | Fix |
 |---|---|

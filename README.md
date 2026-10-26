@@ -43,7 +43,7 @@ vendor/                  (not in git) bundled ffmpeg / whisper / models
 ## Develop
 
 ```bash
-npm test                                   # 28 tests; media tests need ffmpeg on PATH
+npm test                                   # 30 tests; media tests need ffmpeg on PATH
 open client/index.html                     # panel runs in a browser in demo mode
 node cli/poddirector.js presets
 node cli/poddirector.js plan "Episode.poddirector.json" --compare calm,balanced,lively

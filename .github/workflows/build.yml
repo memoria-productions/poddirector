@@ -59,6 +59,9 @@ jobs:
           Invoke-WebRequest https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.1/samples/jfk.wav -OutFile jfk.wav
           $env:PD_EXT = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodDirector"
           node scripts/smoke-test.js jfk.wav
+      - name: In-panel updater installs a package from an update folder
+        shell: pwsh
+        run: node scripts/update-test.js dist
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

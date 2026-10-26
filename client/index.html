@@ -13,6 +13,12 @@
     <button id="btnScan" class="btn">Scan sequence</button>
   </header>
 
+  <div id="updateBanner" class="update-banner hidden">
+    <span id="updateText"></span>
+    <button id="btnUpdateNow" class="btn primary small">Update now</button>
+    <button id="btnUpdateLater" class="btn ghost small">Later</button>
+  </div>
+
   <nav class="tabs">
     <button class="tab active" data-tab="multicam">Multicam</button>
     <button class="tab" data-tab="cleanup">Cleanup</button>
@@ -21,6 +27,18 @@
 
   <!-- ====================================================== MULTICAM -->
   <section class="page active" id="page-multicam">
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Show setup <small>who's on mic, which cameras</small></h2>
+      </div>
+      <div class="setup-row">
+        <select id="setupSelect"></select>
+        <button id="btnSaveSetup" class="btn ghost small" title="Save speakers, cameras and style as a reusable setup">Save as&hellip;</button>
+        <button id="btnDeleteSetup" class="icon trash hidden" title="Delete this saved setup"></button>
+      </div>
+      <div id="setupNote" class="muted small"></div>
+    </div>
 
     <div class="card">
       <div class="card-head">
@@ -137,6 +155,19 @@
       </div>
     </div>
     <div class="card">
+      <h2>Updates</h2>
+      <div class="kv"><span>Installed</span><span id="verInstalled" class="mono"></span></div>
+      <div class="kv"><span>Latest</span><span id="verLatest" class="mono">not checked yet</span></div>
+      <label class="field">Update folder <input id="updateFolder" placeholder="Optional: a shared folder with PodDirector-x.y.z-Windows.zip files" /></label>
+      <label class="chip" style="margin:4px 0"><input type="checkbox" id="updateGithub" checked /> Also check GitHub releases</label>
+      <div class="actions two">
+        <button id="btnCheckUpdates" class="btn">Check for updates</button>
+        <button id="btnInstallUpdate" class="btn primary" disabled>Install update</button>
+      </div>
+      <div id="updateStatus" class="muted small"></div>
+    </div>
+
+    <div class="card">
       <h2>Files</h2>
       <p class="muted small">Presets, exports and cut lists are saved to <span id="docsDir" class="mono"></span></p>
       <div class="actions two">
@@ -163,6 +194,7 @@
 <script src="../engine/analyzer.js"></script>
 <script src="../engine/transcriber.js"></script>
 <script src="../engine/motion.js"></script>
+<script src="../engine/updater.js"></script>
 <script src="./ui-config.js"></script>
 <script src="./demo.js"></script>
 <script src="./viz.js"></script>

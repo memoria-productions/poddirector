@@ -134,3 +134,14 @@ test("presets produce progressively busier edits", () => {
   assert.ok(n("balanced") <= n("lively"), "balanced <= lively");
   assert.ok(n("lively") <= n("social"), "lively <= social");
 });
+
+test("updater picks the newest package in an update folder", async () => {
+  const U = require("../engine/updater.js"), fs = require("fs"), os = require("os"), path = require("path");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pd-upd-"));
+  ["PodDirector-0.2.0-Windows.zip", "PodDirector-0.10.0-Windows.zip", "PodDirector-0.9.3-Windows.zip", "notes.txt"].forEach((f) => fs.writeFileSync(path.join(d, f), ""));
+  const r = await U.check({ current: "0.2.0", folder: d, github: false });
+  assert.equal(r.latest.version, "0.10.0");
+  assert.equal(r.newer, true);
+  assert.equal((await U.check({ current: "0.10.0", folder: d, github: false })).newer, false);
+  assert.equal(U.compare("v1.2.10", "1.2.9"), 1);
+});

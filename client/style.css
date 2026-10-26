@@ -44,7 +44,7 @@ select, input[type=text], input[type=number], input:not([type]) {
 /* speaker / camera rows */
 .rows { display: grid; gap: 6px; }
 .row { background: var(--card2); border-radius: 4px; padding: 6px; border-left: 3px solid var(--sw, #666); }
-.row-main { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px; align-items: center; }
+.row-main { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: auto; gap: 4px; align-items: center; }
 .row-main input.name { width: 100%; font-weight: 600; }
 .row-more { margin-top: 6px; display: none; }
 .row.open .row-more { display: block; }
@@ -105,3 +105,19 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #statusText { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #statusText.err { color: var(--err); } #statusText.ok { color: var(--ok); }
 .log { position: fixed; left: 10px; right: 10px; bottom: 52px; max-height: 40vh; overflow: auto; background: #111; border: 1px solid var(--line); padding: 8px; font-size: 11px; white-space: pre-wrap; z-index: 7; margin: 0; }
+
+/* setups, trash + inline confirm */
+.setup-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; align-items: center; }
+.setup-row select { width: 100%; }
+#setupNote { margin-top: 5px; }
+.icon.trash { width: 22px; height: 22px; padding: 3px; display: inline-flex; align-items: center; justify-content: center; }
+.icon.trash svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon.trash:hover { color: var(--err); }
+.confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 0; }
+.confirm span { flex: 1; min-width: 120px; }
+.btn.danger { background: #8e2b2b; border-color: #8e2b2b; color: #fff; }
+.btn.danger:hover { background: var(--err); }
+.inline-input { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; margin-top: 6px; }
+
+.update-banner { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #1f3357; border: 1px solid var(--accent2); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; }
+.update-banner span { flex: 1; min-width: 150px; }

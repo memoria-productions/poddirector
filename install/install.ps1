@@ -2,7 +2,7 @@
 #   - copies the extension to %APPDATA%\Adobe\CEP\extensions\PodDirector
 #   - unblocks the bundled ffmpeg / whisper executables (downloaded zips are "blocked" by Windows)
 #   - enables loading unsigned CEP extensions (PlayerDebugMode) for Premiere's CEP runtimes
-param([switch]$Uninstall)
+param([switch]$Uninstall, [switch]$Silent)  # -Silent: used by the in-panel updater
 
 $ErrorActionPreference = "Stop"
 $name   = "PodDirector"
@@ -11,7 +11,7 @@ $source = Join-Path $PSScriptRoot $name
 
 function Say($msg, $color = "Gray") { Write-Host $msg -ForegroundColor $color }
 
-if (Get-Process -Name "Adobe Premiere Pro" -ErrorAction SilentlyContinue) {
+if (-not $Silent -and (Get-Process -Name "Adobe Premiere Pro" -ErrorAction SilentlyContinue)) {
   Say "Premiere Pro is running. Please save your work and close it, then press Enter to continue." Yellow
   [void](Read-Host)
 }

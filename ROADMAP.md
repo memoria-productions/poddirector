@@ -11,6 +11,12 @@
 - **Moving cameras:** a camera-motion analyzer (block matching plus a robust global-motion fit, so people moving in frame don't count). Cuts to a dolly or operated camera only once it has settled, waits briefly or goes to the wide during moves, and can keep slow push-ins on air.
 - **Follows-speaker cameras:** an operated camera that counts as a close-up of whoever is talking.
 
+## v0.3 (added)
+
+- **Show setups:** built-in setups for 1, 2, 3, and 4+ subjects, plus saved setups matched by track name and applied automatically. VOX-named tracks are preferred as speaker mics.
+- Trash icon with confirmation for speakers, cameras, and saved setups.
+- **In-panel updater:** checks GitHub releases or a shared update folder, then installs silently.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

@@ -142,7 +142,17 @@
       log("Sequence " + info.name + ": " + info.audioTracks.length + " audio, " + info.videoTracks.length + " video tracks, " + fmt(info.durationSec));
       if (changed) {
         var saved = load("seq." + info.name, null);
-        state.config = saved && validConfig(saved, info) ? saved : guessConfig(info);
+        var last = load("lastSetup", null), lastSetup = last ? userSetups()[last] : null;
+        if (saved && validConfig(saved, info)) {
+          state.config = saved;
+          setNote("Restored your last settings for this sequence.");
+        } else if (lastSetup && setupMatches(lastSetup, info)) {
+          state.config = applySetup(lastSetup, info);
+          setNote("Applied your saved setup \u201C" + last + "\u201D (track names match).");
+        } else {
+          state.config = guessConfig(info);
+          setNote(describeGuess(state.config, info));
+        }
         state.result = null; state.curves = {}; state.motion = {};
         state.tx = { segments: null, suggestions: [], off: {}, nudges: {} };
         loadCachedTranscript();
@@ -157,19 +167,35 @@
       c.cameras.every(function (cm) { return cm.videoTrack < info.videoTracks.length; });
   }
 
-  function guessConfig(info) {
-    var cfg = defaultConfig();
+  var NON_VOICE = /(^|[^a-z])(sfx|fx|music|mus|bed|beds|mix|mixdown|master|room|amb|ambience|ambient|nat|stinger|stem|stems|bgm|song|intro|outro|scratch|camera|cam)([^a-z]|$)/i;
+  var VOX = /vox|voice|vocal/i;
+
+  /** Audio tracks most likely to be speaker mics, best first: VOX-named tracks win outright. */
+  function voiceTracks(info) {
     var camMedia = {};
     info.videoTracks.forEach(function (v) { (v.mediaPaths || []).forEach(function (m) { camMedia[m] = true; }); });
     var audio = info.audioTracks.filter(function (a) { return a.clips.length && !a.muted; });
-    // Audio that comes from a camera file is scratch audio, not a speaker mic.
-    var mics = audio.filter(function (a) { return !a.clips.some(function (c) { return camMedia[c.mediaPath]; }); });
-    if (!mics.length) mics = audio;
-    mics.slice(0, 8).forEach(function (a, i) {
-      var generic = /^(audio|a)\s*\d+$/i.test(a.name);
-      cfg.speakers.push({ id: "S" + (i + 1), name: generic ? "Speaker " + (i + 1) : a.name, audioTrack: a.index, channel: null,
-        thresholdDb: null, biasDb: 0, minShotSec: null, interjections: true, reactionShots: true, enabled: true });
+    var vox = audio.filter(function (a) { return VOX.test(a.name); });
+    if (vox.length) return vox;
+    // Otherwise: not camera scratch audio, and not obviously music / sfx / mix tracks.
+    var mics = audio.filter(function (a) { return !a.clips.some(function (c) { return camMedia[c.mediaPath]; }) && !NON_VOICE.test(a.name); });
+    return mics.length ? mics : audio.filter(function (a) { return !NON_VOICE.test(a.name); });
+  }
+
+  /** subjects: optional number of people on mic (4 = "4 or more"). */
+  function guessConfig(info, subjects, previous) {
+    var cfg = defaultConfig();
+    var mics = voiceTracks(info);
+    var take = subjects ? (subjects >= 4 ? Math.max(4, Math.min(8, mics.length)) : subjects) : Math.min(8, mics.length);
+    var prevByTrack = {};
+    ((previous && previous.speakers) || []).forEach(function (sp) { prevByTrack[sp.audioTrack] = sp; });
+    mics.slice(0, take).forEach(function (a, i) {
+      var generic = /^(audio|a|vox|voice|mic)\s*\d*$/i.test(a.name.trim());
+      var prev = prevByTrack[a.index];
+      cfg.speakers.push({ id: "S" + (i + 1), name: prev ? prev.name : (generic ? "Speaker " + (i + 1) : a.name), audioTrack: a.index, channel: null,
+        thresholdDb: null, biasDb: prev ? prev.biasDb || 0 : 0, minShotSec: null, interjections: true, reactionShots: true, enabled: true });
     });
+    if (subjects) cfg.preset = D.presetForSubjects(cfg.speakers.length);
     var vids = info.videoTracks.filter(function (v) { return v.clipCount > 0; });
     var GENERIC = { mic: 1, microphone: 1, audio: 1, lav: 1, track: 1, speaker: 1, cam: 1, camera: 1 };
     function tokens(n) { return n.toLowerCase().split(/[^a-z0-9]+/).filter(function (w) { return w && !GENERIC[w] && !/^\d+$/.test(w); }); }
@@ -193,14 +219,187 @@
     // operated to follow whoever is talking.
     var nonWide = cfg.cameras.filter(function (c) { return c.shows.length !== allIds.length || c.follows; });
     if (cfg.speakers.length > 1 && nonWide.length === 1 && nonWide[0].moving) { nonWide[0].follows = true; nonWide[0].shows = []; }
+    cfg.setup = subjects ? "n" + subjects : "auto";
     return cfg;
+  }
+
+  function describeGuess(cfg, info) {
+    var names = cfg.speakers.map(function (s) { return "A" + (s.audioTrack + 1) + (info.audioTracks[s.audioTrack] ? " " + info.audioTracks[s.audioTrack].name : ""); });
+    var vox = info.audioTracks.some(function (a) { return VOX.test(a.name); });
+    return cfg.speakers.length ? "Found " + cfg.speakers.length + " speaker mic" + (cfg.speakers.length > 1 ? "s" : "") + (vox ? " (VOX tracks)" : "") + ": " + names.join(", ") + "."
+      : "No speaker mics found. Name your mic tracks VOX1, VOX2\u2026 or add speakers below.";
+  }
+  function setNote(t) { var n = $("setupNote"); if (n) n.textContent = t || ""; }
+
+  // ------------------------------------------------------------- setups
+  // A setup = who's on which mic track, which camera track shows whom, plus the cutting style.
+  // Tracks are matched by name first (so "VOX1 = Martin" carries across episodes), then by position.
+  function userSetups() {
+    var list = load("setups", {});
+    if (hasNode && state.docsDir) {
+      try {
+        fs.readdirSync(path.join(state.docsDir, "setups")).forEach(function (f) {
+          if (!/\.json$/.test(f)) return;
+          try { var p = JSON.parse(fs.readFileSync(path.join(state.docsDir, "setups", f), "utf8")); list[p.name || f.replace(/\.json$/, "")] = p; } catch (e) { /* skip */ }
+        });
+      } catch (e) { /* none yet */ }
+    }
+    return list;
+  }
+
+  function captureSetup(name) {
+    var c = state.config, info = state.seq;
+    var nameOf = {}; c.speakers.forEach(function (sp) { nameOf[sp.id] = sp.name; });
+    return {
+      name: name, kind: "poddirector-setup", savedAt: new Date().toISOString(),
+      preset: c.preset, style: copy(c.style || {}),
+      speakers: c.speakers.map(function (sp) {
+        return { name: sp.name, trackName: info.audioTracks[sp.audioTrack] ? info.audioTracks[sp.audioTrack].name : null, audioTrack: sp.audioTrack,
+          channel: sp.channel, thresholdDb: sp.thresholdDb, biasDb: sp.biasDb, minShotSec: sp.minShotSec,
+          interjections: sp.interjections, reactionShots: sp.reactionShots, enabled: sp.enabled };
+      }),
+      cameras: c.cameras.map(function (cm) {
+        return { name: cm.name, trackName: info.videoTracks[cm.videoTrack] ? info.videoTracks[cm.videoTrack].name : null, videoTrack: cm.videoTrack,
+          shows: cm.shows.map(function (id) { return nameOf[id]; }).filter(Boolean), moving: !!cm.moving, follows: !!cm.follows, enabled: cm.enabled };
+      })
+    };
+  }
+
+  function findTrack(list, name, index) {
+    if (name) {
+      var n = String(name).trim().toLowerCase();
+      for (var i = 0; i < list.length; i++) if (String(list[i].name).trim().toLowerCase() === n) return list[i].index;
+    }
+    return index < list.length ? index : -1;
+  }
+  function setupMatches(setup, info) {
+    return setup.speakers.every(function (s) { return s.trackName && findTrack(info.audioTracks, s.trackName, -1) >= 0; }) &&
+      setup.cameras.every(function (c) { return c.trackName && findTrack(info.videoTracks, c.trackName, -1) >= 0; });
+  }
+
+  function applySetup(setup, info) {
+    var cfg = defaultConfig(), missing = [];
+    cfg.preset = setup.preset || "balanced"; cfg.style = copy(setup.style || {}); cfg.setup = "u:" + setup.name;
+    var idByName = {};
+    setup.speakers.forEach(function (s, i) {
+      var t = findTrack(info.audioTracks, s.trackName, s.audioTrack);
+      if (t < 0) { missing.push(s.name + " (" + s.trackName + ")"); return; }
+      var id = "S" + (i + 1); idByName[s.name] = id;
+      cfg.speakers.push({ id: id, name: s.name, audioTrack: t, channel: s.channel === undefined ? null : s.channel, thresholdDb: s.thresholdDb === undefined ? null : s.thresholdDb,
+        biasDb: s.biasDb || 0, minShotSec: s.minShotSec === undefined ? null : s.minShotSec, interjections: s.interjections !== false,
+        reactionShots: s.reactionShots !== false, enabled: s.enabled !== false });
+    });
+    setup.cameras.forEach(function (c, i) {
+      var t = findTrack(info.videoTracks, c.trackName, c.videoTrack);
+      if (t < 0) { missing.push(c.name + " (" + c.trackName + ")"); return; }
+      cfg.cameras.push({ id: "C" + (i + 1), name: c.name, videoTrack: t, shows: (c.shows || []).map(function (n) { return idByName[n]; }).filter(Boolean),
+        moving: !!c.moving, follows: !!c.follows, enabled: c.enabled !== false });
+    });
+    cfg._missing = missing;
+    return cfg;
+  }
+
+  function renderSetupSelect() {
+    var s = $("setupSelect"); s.innerHTML = "";
+    [["auto", "Auto-detect from track names"], ["n1", "1 subject"], ["n2", "2 subjects"], ["n3", "3 subjects"], ["n4", "4+ subjects"]]
+      .forEach(function (o) { s.appendChild(el("option", { value: o[0], text: o[1] })); });
+    var ups = userSetups(), names = Object.keys(ups).sort();
+    if (names.length) {
+      var g = el("optgroup", { label: "Saved setups" });
+      names.forEach(function (n) { g.appendChild(el("option", { value: "u:" + n, text: "\u2605 " + n })); });
+      s.appendChild(g);
+    }
+    var cur = state.config.setup || "auto";
+    if (cur.indexOf("u:") === 0 && !ups[cur.slice(2)]) cur = "auto";
+    s.value = cur;
+    $("btnDeleteSetup").classList.toggle("hidden", cur.indexOf("u:") !== 0);
+    s.disabled = !state.seq;
+  }
+
+  function chooseSetup(v) {
+    if (!state.seq) return;
+    var prev = state.config;
+    if (v === "auto") { state.config = guessConfig(state.seq, null, prev); setNote(describeGuess(state.config, state.seq)); }
+    else if (v.charAt(0) === "n") {
+      var n = +v.slice(1);
+      state.config = guessConfig(state.seq, n, prev);
+      var got = state.config.speakers.length;
+      setNote((got < n ? "Only found " + got + " voice track" + (got === 1 ? "" : "s") + ". " : "") +
+        describeGuess(state.config, state.seq) + " Style set to \u201C" + D.PRESETS[state.config.preset].label + "\u201D.");
+    } else {
+      var name = v.slice(2), setup = userSetups()[name];
+      if (!setup) return;
+      state.config = applySetup(setup, state.seq);
+      store("lastSetup", name);
+      setNote("Applied \u201C" + name + "\u201D." + (state.config._missing.length ? " Not found in this sequence: " + state.config._missing.join(", ") + "." : ""));
+    }
+    delete state.config._missing;
+    state.config.overrides = [];
+    renderAll(); changed();
+  }
+
+  function saveSetup() {
+    if (!state.seq) return;
+    var card = $("setupSelect").parentNode;
+    if (card.parentNode.querySelector(".inline-input")) return;
+    var input = el("input", { placeholder: "Setup name, e.g. Classical et cetera" });
+    var wrap = el("div", { class: "inline-input" }, [input,
+      el("button", { class: "btn primary small", text: "Save", onclick: function () {
+        var name = input.value.trim().replace(/[\\/:*?"<>|]+/g, "-");
+        if (!name) return;
+        var setup = captureSetup(name);
+        var all = load("setups", {}); all[name] = setup; store("setups", all);
+        if (hasNode && state.docsDir) {
+          try { fs.mkdirSync(path.join(state.docsDir, "setups"), { recursive: true }); fs.writeFileSync(path.join(state.docsDir, "setups", name + ".json"), JSON.stringify(setup, null, 2)); }
+          catch (e) { log("Could not write setup file: " + e.message); }
+        }
+        state.config.setup = "u:" + name; store("lastSetup", name); saveConfig();
+        wrap.remove(); renderSetupSelect();
+        setNote("Saved \u201C" + name + "\u201D. It will be applied automatically to new sequences whose track names match.");
+      } }),
+      el("button", { class: "btn ghost small", text: "Cancel", onclick: function () { wrap.remove(); } })]);
+    card.parentNode.insertBefore(wrap, card.nextSibling);
+    input.focus();
+  }
+
+  function deleteSetup() {
+    var v = $("setupSelect").value;
+    if (v.indexOf("u:") !== 0) return;
+    var name = v.slice(2), card = $("setupSelect").parentNode;
+    confirmBox(card, "Delete the saved setup \u201C" + name + "\u201D?", "Delete", function () {
+      var all = load("setups", {}); delete all[name]; store("setups", all);
+      if (hasNode && state.docsDir) { try { fs.unlinkSync(path.join(state.docsDir, "setups", name + ".json")); } catch (e) { /* not on disk */ } }
+      if (load("lastSetup", null) === name) store("lastSetup", null);
+      state.config.setup = "auto"; saveConfig(); renderSetupSelect();
+      setNote("Deleted \u201C" + name + "\u201D. Your current speakers and cameras are unchanged.");
+    });
+  }
+
+  var TRASH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+  function trashButton(title, onClick) {
+    var b = el("button", { class: "icon trash", title: title, onclick: onClick });
+    b.innerHTML = TRASH_SVG;
+    return b;
+  }
+  /** Inline "are you sure?" that temporarily replaces an element's content. */
+  function confirmBox(host, message, yesLabel, onYes) {
+    var saved = Array.prototype.slice.call(host.childNodes);
+    host.innerHTML = "";
+    function restore() { host.innerHTML = ""; saved.forEach(function (n) { host.appendChild(n); }); }
+    var box = el("div", { class: "confirm" }, [
+      el("span", { text: message }),
+      el("button", { class: "btn danger small", text: yesLabel, onclick: function () { onYes(); } }),
+      el("button", { class: "btn ghost small", text: "Cancel", onclick: restore })
+    ]);
+    host.appendChild(box);
+    box.querySelector(".btn.danger").focus();
   }
 
   function saveConfig() { if (state.seq) store("seq." + state.seq.name, state.config); }
 
   // ------------------------------------------------------------ render
   function renderAll() {
-    renderSpeakers(); renderCameras(); renderPresetSelect(); renderStyle(); renderLocks(); setButtons();
+    renderSetupSelect(); renderSpeakers(); renderCameras(); renderPresetSelect(); renderStyle(); renderLocks(); setButtons();
   }
 
   function colorOf(i) { return UI.colors[i % UI.colors.length]; }
@@ -228,7 +427,14 @@
         name,
         select(trackOptions("audio"), sp.audioTrack, function (v) { sp.audioTrack = +v; changed(); }),
         select(chans, sp.channel === null ? "mix" : sp.channel, function (v) { sp.channel = v === "mix" ? null : +v; changed(); }),
-        el("button", { class: "icon", title: "More settings", text: sp._open ? "▾" : "⚙", onclick: function () { sp._open = !sp._open; renderSpeakers(); } })
+        el("button", { class: "icon", title: "More settings", text: sp._open ? "▾" : "⚙", onclick: function () { sp._open = !sp._open; renderSpeakers(); } }),
+        trashButton("Remove this speaker", function () {
+          confirmBox(row, "Remove speaker \u201C" + sp.name + "\u201D? Their mic will be ignored.", "Remove", function () {
+            state.config.speakers = state.config.speakers.filter(function (x) { return x !== sp; });
+            state.config.cameras.forEach(function (c) { c.shows = c.shows.filter(function (id) { return id !== sp.id; }); });
+            renderAll(); changed();
+          });
+        })
       ]);
       row.appendChild(main);
       var cal = state.result && calFor(sp.id);
@@ -257,12 +463,7 @@
           "Their laughs / “yeah”s can trigger a reaction shot of them"),
         chip("Use as listener", sp.reactionShots !== false, function (on) { sp.reactionShots = on; changed(true); },
           "Can be shown listening during someone else's monologue"),
-        chip("Enabled", sp.enabled !== false, function (on) { sp.enabled = on; changed(); }, "Turn off to ignore this mic"),
-        el("button", { class: "btn ghost small", text: "Remove", onclick: function () {
-          state.config.speakers.splice(i, 1);
-          state.config.cameras.forEach(function (c) { c.shows = c.shows.filter(function (id) { return id !== sp.id; }); });
-          renderAll(); changed();
-        } })
+        chip("Enabled", sp.enabled !== false, function (on) { sp.enabled = on; changed(); }, "Turn off to ignore this mic")
       ]);
       more.appendChild(chips);
       row.appendChild(more);
@@ -291,12 +492,17 @@
       row.style.setProperty("--sw", camColor(i));
       var name = el("input", { class: "name", value: cm.name, oninput: function () { cm.name = name.value; changed(true); } });
       var role = cm.follows ? "follows speaker" : cm.shows.length === 0 ? "unused" : cm.shows.length === 1 ? "close-up" : (cm.shows.length === spk.length ? "wide" : cm.shows.length + "-shot");
-      if (cm.moving) role += " \u00B7 moving";
+      if (cm.moving) role += " \u00B7 movement check";
       row.appendChild(el("div", { class: "row-main" }, [
         name,
         select(trackOptions("video"), cm.videoTrack, function (v) { cm.videoTrack = +v; changed(); }),
         el("span", { class: "muted small", text: role }),
-        el("button", { class: "icon", title: "Remove camera", text: "✕", onclick: function () { state.config.cameras.splice(i, 1); renderCameras(); changed(); } })
+        trashButton("Remove this camera", function () {
+          confirmBox(row, "Remove camera \u201C" + cm.name + "\u201D? PodDirector won't cut to it.", "Remove", function () {
+            state.config.cameras = state.config.cameras.filter(function (x) { return x !== cm; });
+            renderCameras(); renderStyle(); changed();
+          });
+        })
       ]));
       var chips = el("div", { class: "chips" });
       if (!cm.follows) spk.forEach(function (sp) {
@@ -308,8 +514,8 @@
       });
       chips.appendChild(chip("Follows speaker", !!cm.follows, function (on) { cm.follows = on; renderCameras(); renderStyle(); changed(); },
         "An operator re-frames this camera on whoever is talking: it can show any speaker (never a group or a listener)."));
-      chips.appendChild(chip("Moving camera", !!cm.moving, function (on) { cm.moving = on; renderCameras(); renderStyle(); changed(); },
-        "Dolly, slider, handheld or operated: check its picture for movement and only cut to it when it's steady."));
+      chips.appendChild(chip("Check for movement", !!cm.moving, function (on) { cm.moving = on; renderCameras(); renderStyle(); changed(); },
+        "On for a dolly, slider, handheld or operated camera: PodDirector reads its picture and only cuts to it when it's steady. Leave off for locked-off cameras like a static wide (faster analysis, never held back)."));
       chips.appendChild(chip("Enabled", cm.enabled !== false, function (on) { cm.enabled = on; changed(); }));
       var stab = state.result && state.result.stability && state.result.stability[cm.id];
       if (cm.moving && stab) {
@@ -872,6 +1078,46 @@
     } else status(ok ? "Copied to clipboard." : "Copy failed.", ok ? "ok" : "err");
   }
 
+  // ------------------------------------------------------------ updates
+  var U = window.PodUpdater, pending = null;
+  function updateOpts() {
+    return { current: D.VERSION, folder: $("updateFolder").value.trim(), github: $("updateGithub").checked };
+  }
+  function checkUpdates(quiet) {
+    if (!hasNode || !U) { if (!quiet) $("updateStatus").textContent = "Updates need the panel running inside Premiere."; return Promise.resolve(); }
+    $("updateStatus").textContent = "Checking\u2026";
+    store("updateCheckedAt", Date.now());
+    return U.check(updateOpts()).then(function (r) {
+      pending = r.newer ? r.latest : null;
+      $("verLatest").textContent = r.latest ? r.latest.version + " (" + r.latest.source + ")" : "none found";
+      $("btnInstallUpdate").disabled = !pending;
+      $("updateStatus").textContent = pending ? "Version " + pending.version + " is available." :
+        (r.latest ? "You're up to date." : "No release found.") + (r.errors.length ? " " + r.errors.join(" ") : "");
+      if (pending && load("skipVersion", null) !== pending.version) {
+        $("updateText").textContent = "PodDirector " + pending.version + " is available (you have " + D.VERSION + ").";
+        $("updateBanner").classList.remove("hidden");
+      }
+      if (r.errors.length) log("Update check: " + r.errors.join(" | "));
+    });
+  }
+  var installUpdate = guard(function () {
+    if (!pending) return;
+    $("updateBanner").classList.add("hidden");
+    var labels = { copy: "Copying update", download: "Downloading update", unpack: "Unpacking", install: "Installing", done: "Installed" };
+    return U.install(pending, function (stage, f) {
+      status(labels[stage] + (f && f < 1 ? " " + Math.round(f * 100) + "%" : "") + "\u2026", "", stage === "download" ? f * 0.7 : stage === "install" ? 0.85 : stage === "done" ? 1 : 0.75);
+    }).then(function (r) {
+      log(r.log);
+      $("updateStatus").textContent = "Installed " + r.version + ". Restart Premiere Pro to finish.";
+      $("updateText").textContent = "PodDirector " + r.version + " is installed. Save your project and restart Premiere Pro to use it.";
+      $("btnUpdateNow").classList.add("hidden");
+      $("btnUpdateLater").textContent = "OK";
+      $("updateBanner").classList.remove("hidden");
+      status("Update installed \u2014 restart Premiere Pro to finish.", "ok", 1);
+      pending = null; $("btnInstallUpdate").disabled = true;
+    });
+  });
+
   // ------------------------------------------------------------ wiring
   function setButtons() {
     var has = !!state.result, b = state.busy;
@@ -915,10 +1161,16 @@
   };
   $("btnExportPlan").onclick = exportForClaude;
   $("btnSavePreset").onclick = savePreset;
+  $("setupSelect").onchange = function () { chooseSetup(this.value); };
+  $("btnSaveSetup").onclick = saveSetup;
+  $("btnDeleteSetup").onclick = deleteSetup;
+  $("btnDeleteSetup").innerHTML = TRASH_SVG;
   $("btnAddSpeaker").onclick = function () {
     if (!state.seq) return;
     var n = state.config.speakers.length + 1, id = "S" + Date.now().toString(36);
-    state.config.speakers.push({ id: id, name: "Speaker " + n, audioTrack: 0, channel: null, thresholdDb: null, biasDb: 0, minShotSec: null, interjections: true, reactionShots: true, enabled: true, _open: true });
+    var used = state.config.speakers.map(function (x) { return x.audioTrack; });
+    var free = voiceTracks(state.seq).filter(function (a) { return used.indexOf(a.index) < 0; })[0];
+    state.config.speakers.push({ id: id, name: "Speaker " + n, audioTrack: free ? free.index : 0, channel: null, thresholdDb: null, biasDb: 0, minShotSec: null, interjections: true, reactionShots: true, enabled: true, _open: true });
     renderAll(); changed();
   };
   $("btnAddCamera").onclick = function () {
@@ -955,5 +1207,20 @@
     }).catch(function () { /* sequence closed */ });
   }, 500);
 
+  $("verInstalled").textContent = D.VERSION;
+  $("updateFolder").value = load("updateFolder", "");
+  $("updateGithub").checked = load("updateGithub", true) !== false;
+  $("updateFolder").onchange = function () { store("updateFolder", this.value.trim()); };
+  $("updateGithub").onchange = function () { store("updateGithub", this.checked); };
+  $("btnCheckUpdates").onclick = function () { checkUpdates(false); };
+  $("btnInstallUpdate").onclick = installUpdate;
+  $("btnUpdateNow").onclick = installUpdate;
+  $("btnUpdateLater").onclick = function () {
+    if (pending) store("skipVersion", pending.version);
+    $("updateBanner").classList.add("hidden");
+  };
+
   init();
+  // Quietly look for updates at most twice a day.
+  if (hasNode && Date.now() - (load("updateCheckedAt", 0) || 0) > 12 * 3600 * 1000) setTimeout(function () { checkUpdates(true).catch(function () {}); }, 4000);
 })();

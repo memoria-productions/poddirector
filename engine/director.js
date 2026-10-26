@@ -96,8 +96,25 @@
       label: "Host focus (stay on speaker, few cutaways)",
       style: { reactionDelaySec: 0.6, minShotSec: 2.5, crosstalkMode: "loudest", wideAfterSilenceSec: 0,
                interjectionMode: "ignore", maxShotSec: 0, openOnWideSec: 2 }
+    },
+    solo: {
+      label: "1 subject (solo host / monologue)",
+      style: { reactionDelaySec: 0.6, minShotSec: 3, crosstalkMode: "hold", wideAfterSilenceSec: 0, interjectionMode: "ignore",
+               maxShotSec: 20, cutawayMode: "mix", cutawaySec: 4, openOnWideSec: 3 }
+    },
+    trio: {
+      label: "3 subjects",
+      style: { reactionDelaySec: 0.35, minShotSec: 1.8, crosstalkMinSec: 0.9, interjectionChance: 0.5, maxShotSec: 16,
+               wideAfterSilenceSec: 3 }
+    },
+    panel: {
+      label: "4+ subjects (panel / roundtable)",
+      style: { reactionDelaySec: 0.35, minShotSec: 1.8, crosstalkMinSec: 0.7, wideAfterSilenceSec: 2.5, interjectionChance: 0.4,
+               maxShotSec: 15, cutawayMode: "wide", openOnWideSec: 4 }
     }
   };
+  /** Style preset that suits a given number of people on mic. */
+  function presetForSubjects(n) { return n <= 1 ? "solo" : n === 2 ? "balanced" : n === 3 ? "trio" : "panel"; }
 
   var DEFAULT_SPEAKER = {
     thresholdDb: null,      // null = auto-calibrate
@@ -902,11 +919,12 @@
   }
 
   return {
-    VERSION: "0.2.0",
+    VERSION: "0.3.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
     styleFromPreset: styleFromPreset,
+    presetForSubjects: presetForSubjects,
     plan: plan,
     toEditPayload: toEditPayload,
     _internal: { smoothRuns: smoothRuns, calibrate: calibrate, percentile: percentile, shotAt: shotAt }
