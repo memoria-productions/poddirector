@@ -158,3 +158,20 @@ test("planRange cuts only between the In and Out marks", () => {
   assert.equal(p.cutFrames[p.cutFrames.length - 1], 2700, "and at the Out mark, so the outro is untouched");
   assert.ok(p.shots.every((s) => s.startFrame >= 900 && s.endFrame <= 2700));
 });
+
+test("a removed section never joins the same camera to itself (no jump cut)", () => {
+  // Paul talks 1-60; he says "cut that" and the section 20-25 will be removed.
+  const input = makeCurves([["A", 1, 60]], { durationSec: 62 });
+  const style = { openOnWideSec: 0, maxShotSec: 0, interjectionMode: "ignore" };
+  const r = D.plan(input, { speakers, cameras, style, removals: [{ startSec: 20, endSec: 25 }] });
+  const before = at(r, 19.9), after = at(r, 25.05);
+  assert.equal(before.cameraId, "cA");
+  assert.notEqual(after.cameraId, before.cameraId, "camera changes across the removed section");
+  assert.equal(after.reason, "jump-cover");
+  assert.equal(at(r, 40).cameraId, "cA", "back on the speaker afterwards");
+  assert.ok(r.shots.some((s) => Math.abs(s.startSec - 20) < 0.05) && r.shots.some((s) => Math.abs(s.startSec - 25) < 0.05), "edit points at both ends");
+  const off = D.plan(input, { speakers, cameras, style: Object.assign({ changeCameraAtCuts: false }, style), removals: [{ startSec: 20, endSec: 25 }] });
+  assert.equal(at(off, 25.05).cameraId, "cA");
+  const ranged = D.planRange(input, { speakers, cameras, style, removals: [{ startSec: 20, endSec: 25 }] }, 5, 55);
+  assert.notEqual(at(ranged, 25.05).cameraId, at(ranged, 19.9).cameraId, "works with In/Out ranges too");
+});

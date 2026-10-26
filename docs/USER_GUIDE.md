@@ -149,8 +149,9 @@ Under the preview you'll see the number of cuts, cuts per minute, average and lo
    - **Interruptions:** phones and alarms ("let me silence my phone", "sorry, that's my alarm", Whisper's own *[phone ringing]* tags), someone at the door, "I have to take this". The suggestion runs from the ring through the "okay, sorry about that", and stops where the conversation picks back up.
    - **Technical chatter:** "hold on", "is the camera still recording?" These are flagged with lower confidence.
 3. Each suggestion shows its time range, confidence, and transcript text. **Click** a suggestion to jump Premiere's playhead there. Use the arrow buttons to nudge the start or end by 0.5 s, and untick any you want to keep.
-4. **Mark selected on timeline** adds red range markers. Review them in context, then lift or ripple-delete the ones you agree with. PodDirector never deletes anything for you.
-5. **Copy for Claude review** copies the flagged list plus the full transcript, ready to paste into Claude for a second opinion.
+4. Ticked suggestions also feed the multicam cut. Removing a section joins the shot before it to the shot after it, so PodDirector makes sure those two are **different cameras**. Typically it goes to the wide for a few seconds, then back, which hides the jump. You'll see a "cut cover" shot in the preview. The **Cleanup cuts** group in the cutting style turns this on or off and sets how long the cover shot lasts. If you've already built the copy, click **Recut** afterwards so it picks this up.
+5. **Mark selected on timeline** adds red range markers. Review them in context, then lift or ripple-delete the ones you agree with. PodDirector never deletes anything for you.
+6. **Copy for Claude review** copies the flagged list plus the full transcript, ready to paste into Claude for a second opinion.
 
 Add names and jargon under Settings → *Vocabulary hint* to improve transcription accuracy.
 

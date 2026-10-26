@@ -45,6 +45,13 @@ window.PD_UI = {
         help: "Once on the moving camera, should gentle moves stay on screen?" },
       { key: "movePadSec", label: "Leave move early by", min: 0, max: 1, step: 0.05, unit: "s" }
     ]},
+    { title: "Cleanup cuts", open: false, controls: [
+      { key: "changeCameraAtCuts", label: "Across a cut", type: "select",
+        options: [[true, "Switch camera (hide the jump)"], [false, "Leave as is"]],
+        help: "Sections ticked on the Cleanup tab will be removed, joining the shots on either side. Switching camera there hides the jump cut." },
+      { key: "jumpCoverSec", label: "Cover shot", min: 1, max: 8, step: 0.5, unit: "s",
+        help: "How long the other camera stays up after a removed section before going back (or until the next natural cut)." }
+    ]},
     { title: "Long monologues", open: false, controls: [
       { key: "maxShotSec", label: "Break shots over", min: 0, max: 60, step: 1, unit: "s", zero: "never",
         help: "Insert a cutaway when one shot runs longer than this. 0 = never." },

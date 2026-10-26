@@ -67,6 +67,9 @@
     maxWaitSec: 1.5,           // hold the previous shot up to this long waiting for the camera to settle
     slowMovesOnAir: true,      // once on the shot, gentle moves (push-ins, drifts) may stay on air
     movePadSec: 0.2,           // leave a move this early / come back this late
+    // Cleanup cuts (sections that will be removed)
+    changeCameraAtCuts: true,  // the shots either side of a removed section must be different cameras (no jump cut)
+    jumpCoverSec: 3.0,         // how long the covering shot stays up before going back (or until the next cut)
     // Misc
     seed: 7,
     snapToFrames: true
@@ -791,6 +794,50 @@
     return shots;
   }
 
+  // -------------------------------------------------- 10b. cleanup cuts
+
+  function splitAt(shots, f) {
+    var out = [];
+    shots.forEach(function (s) {
+      if (f > s.start && f < s.end) {
+        var l = copyShot(s), r = copyShot(s); l.end = f; r.start = f; r.onset = false;
+        out.push(l, r);
+      } else out.push(s);
+    });
+    return out;
+  }
+
+  /**
+   * Sections that will be removed (cleanup cuts) join the shot before them to the shot after them. If both are the
+   * same camera that's a jump cut, so the shot after the removal switches to another camera (the wide, the
+   * speaker's other angle, or anyone else) for a moment, then returns.
+   */
+  function applyRemovals(shots, removals, style, ctx) {
+    if (!removals || !removals.length) return shots;
+    var fr = ctx.fr, minShot = Math.round(style.minShotSec * fr);
+    var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    removals.map(function (r) {
+      return { a: Math.max(0, Math.round(Math.min(r.startSec, r.endSec) * fr)), b: Math.min(ctx.frames, Math.round(Math.max(r.startSec, r.endSec) * fr)) };
+    }).filter(function (r) { return r.b > r.a; }).sort(function (x, y) { return x.a - y.a; }).forEach(function (r) {
+      shots = splitAt(splitAt(shots, r.a), r.b);
+      // The removed part itself: mark it so it never merges away (keeps edit points at both ends).
+      shots.forEach(function (s) { if (s.start >= r.a && s.end <= r.b && !s.locked) { s.reason = "removed"; s.locked = true; s.removed = true; } });
+      if (!style.changeCameraAtCuts || r.a === 0 || r.b >= ctx.frames) return;
+      var before = shotAt(shots, r.a - 1), after = shotAt(shots, r.b);
+      if (!before || !after || after.cameraId !== before.cameraId || (after.locked && !after.removed)) return;
+      var ci = ctx.ci, cands = [ci.widest];
+      (after.speakers || []).forEach(function (si) { cands = cands.concat(ci.closeups(si)); });
+      cands = cands.concat(ci.list.map(function (c) { return c.cam.id; }));
+      var cover = Math.max(minShot, Math.round(style.jumpCoverSec * fr));
+      var end = after.end - r.b <= cover + minShot ? after.end : (quietestFrame(ctx, r.b + cover, r.b + minShot, after.end - minShot) || r.b + cover);
+      var cam = null;
+      for (var i = 0; i < cands.length; i++) if (cands[i] && cands[i] !== before.cameraId && canShow(cands[i], r.b, end)) { cam = cands[i]; break; }
+      if (!cam) return;
+      shots = insertShot(shots, { start: r.b, end: end, cameraId: cam, reason: "jump-cover", speakers: (after.speakers || []).slice(), onset: false, locked: true });
+    });
+    return shots;
+  }
+
   function applyOverrides(shots, overrides, ctx) {
     (overrides || []).forEach(function (o) {
       var a = Math.round(Math.min(o.startSec, o.endSec) * ctx.fr);
@@ -841,6 +888,7 @@
     ctx.stable = stabilityHelpers(ctx.stability, style, ctx);
     shots = applyStability(shots, style, ctx);
     shots = enforceMinShot(shots, speakers, style, ctx);
+    shots = applyRemovals(shots, config.removals, style, ctx);
     shots = applyOverrides(shots, config.overrides, ctx);
     shots = mergeShots(shots);
 
@@ -919,9 +967,11 @@
       var m = input.cameraMotion[k], g0 = Math.round(a / m.hopSec), g1 = Math.round(b / m.hopSec);
       motion[k] = { hopSec: m.hopSec, values: m.values.slice ? m.values.slice(g0, g1) : Array.prototype.slice.call(m.values, g0, g1) };
     });
-    var cfg = merge(config, { overrides: (config.overrides || []).map(function (o) {
-      return { startSec: o.startSec - a, endSec: o.endSec - a, cameraId: o.cameraId };
-    }).filter(function (o) { return o.endSec > 0 && o.startSec < b - a; }) });
+    var shift = function (list) {
+      return (list || []).map(function (o) { return merge(o, { startSec: o.startSec - a, endSec: o.endSec - a }); })
+        .filter(function (o) { return o.endSec > 0 && o.startSec < b - a; });
+    };
+    var cfg = merge(config, { overrides: shift(config.overrides), removals: shift(config.removals) });
     var r = plan({ durationSec: b - a, hopSec: hop, fps: fps, curves: curves, cameraMotion: motion }, cfg);
     var sh = function (t) { return round3(t + a); };
     r.shots.forEach(function (s) { s.startSec = sh(s.startSec); s.endSec = sh(s.endSec); });
@@ -952,7 +1002,7 @@
   }
 
   return {
-    VERSION: "0.4.1",
+    VERSION: "0.4.2",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

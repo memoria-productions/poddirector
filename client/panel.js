@@ -833,7 +833,9 @@
     try {
       var planInput = { durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves, cameraMotion: cameraMotionInput() };
       var rng = currentRange();
-      state.result = rng ? D.planRange(planInput, state.config, rng.a, rng.b) : D.plan(planInput, state.config);
+      // Accepted cleanup cuts are passed in so the camera changes across each removed section.
+      var planCfg = Object.assign({}, state.config, { removals: acceptedCuts() });
+      state.result = rng ? D.planRange(planInput, planCfg, rng.a, rng.b) : D.plan(planInput, planCfg);
     } catch (e) { status(e.message, "err"); state.result = null; setButtons(); return; }
     var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
     var cams = state.config.cameras.map(function (c, i) { return { id: c.id, name: c.name, color: camColor(i) }; });
@@ -1145,7 +1147,10 @@
       var r = sugRange(s); return { startSec: r[0], endSec: r[1] };
     });
   }
-  function refreshVizCleanup() { if (viz.data) { viz.data.cleanup = acceptedCuts(); viz.render(); } }
+  function refreshVizCleanup() {
+    if (viz.data) { viz.data.cleanup = acceptedCuts(); viz.render(); }
+    if (state.result) debounce("plan", replan, 150); // camera must change across each accepted cut
+  }
 
   function renderSuggestions() {
     var box = $("sugList"); box.innerHTML = "";
