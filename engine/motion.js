@@ -254,7 +254,7 @@
       "-an", "-sn", "-dn", "-vf", "fps=" + FPS + ",scale=" + W + ":" + H + ":flags=area,format=gray",
       "-f", "rawvideo", "pipe:1"];
     return new Promise(function (resolve, reject) {
-      var p = cp.spawn(opts.ffmpegPath || "ffmpeg", args, { windowsHide: true });
+      var p = cp.spawn(opts.ffmpegPath || "ffmpeg", args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       var frameSize = W * H, pending = Buffer.alloc(0), idx = 0, prev = null, prevHalf = null, err = "";
       p.stdout.on("data", function (chunk) {
         pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;

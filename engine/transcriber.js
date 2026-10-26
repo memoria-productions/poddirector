@@ -78,7 +78,7 @@
     if (majorCache[ffmpegPath] !== undefined) return majorCache[ffmpegPath];
     var v = 7;
     try {
-      var out = String(cp.spawnSync(ffmpegPath, ["-hide_banner", "-version"], { windowsHide: true }).stdout || "");
+      var out = String(cp.spawnSync(ffmpegPath, ["-hide_banner", "-version"], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }).stdout || "");
       var m = /ffmpeg version (?:n)?(\d+)\./.exec(out);
       if (m) v = +m[1]; // "master"/git builds have no number: assume modern
     } catch (e) { /* assume modern */ }
@@ -110,7 +110,7 @@
       var graphFile = outPath + ".filter.txt";
       fs.writeFileSync(graphFile, chains.join(";\n"));
       args.push(ffmpegMajor(ffmpegPath) >= 7 ? "-/filter_complex" : "-filter_complex_script", graphFile, "-map", "[out]", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", outPath);
-      var p = cp.spawn(ffmpegPath, args, { windowsHide: true });
+      var p = cp.spawn(ffmpegPath, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       var err = "";
       p.stdout.on("data", function (d) {
         var m = /out_time_ms=(\d+)/.exec(String(d));
@@ -139,7 +139,7 @@
       if (state.vad) args.push("--vad", "-vm", state.vad);
       args.push("-l", english ? "en" : (opts.language || "auto"));
       if (opts.prompt) args.push("--prompt", opts.prompt);
-      var p = cp.spawn(state.whisper, args, { cwd: path.dirname(state.whisper), windowsHide: true });
+      var p = cp.spawn(state.whisper, args, { cwd: path.dirname(state.whisper), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       var err = "";
       function scan(d) {
         var s = String(d);

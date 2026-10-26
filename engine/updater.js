@@ -103,7 +103,7 @@
 
   function run(cmd, args) {
     return new Promise(function (resolve, reject) {
-      var p = cp.spawn(cmd, args, { windowsHide: true });
+      var p = cp.spawn(cmd, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       var out = "";
       p.stdout.on("data", function (d) { out += d; });
       p.stderr.on("data", function (d) { out += d; });

@@ -62,7 +62,7 @@
   function tryRun(cmd) {
     return new Promise(function (resolve) {
       var p;
-      try { p = cp.spawn(cmd, ["-hide_banner", "-version"], { windowsHide: true }); }
+      try { p = cp.spawn(cmd, ["-hide_banner", "-version"], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); }
       catch (e) { return resolve(false); }
       var out = "";
       p.stdout.on("data", function (d) { out += d; });
@@ -150,7 +150,7 @@
       "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"];
 
     return new Promise(function (resolve, reject) {
-      var p = cp.spawn(state.ffmpeg, args, { windowsHide: true });
+      var p = cp.spawn(state.ffmpeg, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       var idx = 0, acc = 0, count = 0, carry = null, err = "";
       p.stdout.on("data", function (chunk) {
         if (carry) { chunk = Buffer.concat([carry, chunk]); carry = null; }
