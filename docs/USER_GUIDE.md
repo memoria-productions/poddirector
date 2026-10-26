@@ -46,7 +46,9 @@ Tips:
    - Everyone ticked = the **wide** shot.
    - Two people ticked = a **two-shot**, used when exactly those two talk over each other.
    - A person with two close-up cameras gets **angle rotation** between them.
-4. **Analyze waveforms** reads the mic audio. The first run takes a little while. After that the results are cached, so changing settings is instant.
+   - **Follows speaker:** for a camera whose operator re-frames on whoever is talking. It counts as a close-up of every speaker, but never as a group shot or a listener reaction.
+   - **Moving camera:** for a dolly, slider, gimbal, or handheld camera. PodDirector checks its picture and only cuts to it when it's steady (section 4, *Moving cameras*).
+4. **Analyze waveforms** reads the mic audio. It also checks any moving cameras for movement, which decodes their video at low resolution: allow a few minutes per hour of footage the first time. The first run takes a little while. After that the results are cached, so changing settings is instant.
 5. **Tune the style** (section 4). The preview strip updates live.
    - **Click** the preview to move Premiere's playhead to that moment.
    - **Drag** across a range, then pick a camera to **lock** it there. "Auto" unlocks it.
@@ -87,6 +89,20 @@ These are listener reactions like "Yeah", laughs, and quick remarks.
 - **Interjections:** cut to the person reacting, cut to the wide, or ignore them.
 - **Reaction frequency:** the share of interjections that get a shot. This keeps the edit from cutting away constantly.
 - **Interjection length:** speech shorter than this, over someone else, counts as an interjection rather than a new turn.
+
+### Moving cameras
+
+This group appears once a camera is marked **Moving camera**. PodDirector measures how much the *camera* moves (pan, tilt, dolly, push-in, shake) separately from how much the *people* move. Someone gesturing or leaning in front of a steady camera doesn't count as camera movement. The preview shows a movement lane for each moving camera: **green** = steady, **amber** = slow move, **red** = big move.
+
+- **Steady below / Big move above:** the two thresholds, in percent of frame width per second. Between them is a *slow move*, such as a gentle push-in or a drift.
+- **Settle time:** how long the camera must be steady before PodDirector cuts to it, so you never land on the tail end of a move.
+- **Wait to settle:** if a cut would land mid-move, PodDirector holds the previous shot up to this long. Longer moves go to the wide until the camera settles.
+- **Slow moves on air:** keep gentle push-ins on screen once you're on that camera, or cut away from any movement.
+- **Leave move early by:** how early to cut away before a big move starts.
+
+Typical setup, one static wide plus one operated dolly camera: mark the dolly **Moving camera** and **Follows speaker**. The edit then reads: dolly on whoever is talking when it's steady, the wide while the operator re-frames, back to the dolly once it settles.
+
+If the camera row says *plain background, treated as steady*, the shot doesn't have enough detail behind the subject (a bare wall, a seamless backdrop) to measure camera movement. Watch the result there, and lock any bad moments by dragging on the preview.
 
 ### Long monologues
 
@@ -142,6 +158,8 @@ Add names and jargon under Settings → *Vocabulary hint* to improve transcripti
 | The camera follows the wrong person | Open ⚙ on that speaker and look at the level bar. If the white threshold line sits inside the bleed, set the threshold manually above it, or lower **Bleed rejection**. |
 | Too many quick cuts | Raise **Reaction delay** and **Minimum shot**, or switch to **Calm**. |
 | Reactions feel random | Lower **Reaction frequency**, or turn off **Reacts on screen** for the chatty listener. |
+| PodDirector cuts to the dolly while it's still moving | Raise **Settle time**, or lower **Steady below**. |
+| The dolly is hardly used | Check its movement lane. If it's mostly amber, raise **Steady below** a little or turn on **Slow moves on air**. |
 | Build is slow on a long show | Razoring runs about 20–50 ms per cut per camera track. A 1-hour show with 600 cuts on 3 cameras takes about a minute. |
 
 Files (presets, transcripts, exports, cut lists) are saved in **Documents\PodDirector**.

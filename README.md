@@ -16,6 +16,7 @@ host/host.jsx            ExtendScript: read sequence, markers, duplicate, razor,
 client/                  Panel UI (index.html, panel.js, viz.js, ui-config.js, demo.js)
 engine/director.js       Cutting engine (pure JS, no deps), the heart of it
 engine/analyzer.js       ffmpeg -> per-track loudness curves (dB/25 ms), disk-cached
+engine/motion.js         ffmpeg -> camera-motion curves (pan/tilt/dolly/zoom, subject motion rejected)
 engine/transcriber.js    Timeline mix -> whisper.cpp (word timestamps + Silero VAD)
 engine/transcript.js     Transcript parsing + cut-cue / restart / off-record detection
 cli/poddirector.js       Offline tuning: plan / compare presets / cleanup
@@ -36,12 +37,13 @@ vendor/                  (not in git) bundled ffmpeg / whisper / models
 7. **Reactions:** interjections become reaction shots, with probability, spacing, and per-speaker switches.
 8. **Cutaways:** shots longer than `maxShotSec` get a wide, listener, or alternate angle, placed at the quietest moment near evenly spaced targets.
 9. **Timing:** speech-onset cuts shift by `cutTimingSec`. Optionally opens on the wide.
+9b. **Moving cameras:** each moving camera's motion curve is median-filtered and classed as steady, slow, or fast. A cut to it waits (holding the previous shot, up to `maxWaitSec`) until it has been steady for `settleSec`. Fast moves, and slow ones if `slowMovesOnAir` is off, are replaced by the wide or another static angle. Minimum-shot cleanup never puts a moving camera back on air.
 10. **Cleanup:** shortest-first minimum-shot absorption, manual locks, frame snapping.
 
 ## Develop
 
 ```bash
-npm test                                   # 18 tests; media tests need ffmpeg on PATH
+npm test                                   # 28 tests; media tests need ffmpeg on PATH
 open client/index.html                     # panel runs in a browser in demo mode
 node cli/poddirector.js presets
 node cli/poddirector.js plan "Episode.poddirector.json" --compare calm,balanced,lively

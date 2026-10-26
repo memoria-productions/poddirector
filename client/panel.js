@@ -14,6 +14,7 @@
     seq: null,
     config: null,
     curves: {},        // "track:channel" -> Float32Array
+    motion: {},        // "v:<videoTrack>" -> { hopSec, values } camera motion
     result: null,
     busy: false,
     tx: { segments: null, suggestions: [], off: {}, nudges: {} },
@@ -142,7 +143,7 @@
       if (changed) {
         var saved = load("seq." + info.name, null);
         state.config = saved && validConfig(saved, info) ? saved : guessConfig(info);
-        state.result = null; state.curves = {};
+        state.result = null; state.curves = {}; state.motion = {};
         state.tx = { segments: null, suggestions: [], off: {}, nudges: {} };
         loadCachedTranscript();
       }
@@ -183,8 +184,15 @@
       else if (byName.length) shows = byName.map(function (s) { return s.id; });
       else if (next < cfg.speakers.length) shows = [cfg.speakers[next++].id];
       else shows = allIds.slice();
-      cfg.cameras.push({ id: "C" + (i + 1), name: nm.replace(/\.[a-z0-9]{2,4}$/i, ""), videoTrack: v.index, shows: shows, enabled: true });
+      var moving = /dolly|slider|jib|crane|handheld|hand-held|gimbal|steadicam|roam|rover|moving|operat|follow|track/i.test(nm);
+      var follows = /follow|roam|rover|operat/i.test(nm);
+      cfg.cameras.push({ id: "C" + (i + 1), name: nm.replace(/\.[a-z0-9]{2,4}$/i, ""), videoTrack: v.index, shows: follows ? [] : shows,
+        moving: moving, follows: follows, enabled: true });
     });
+    // One wide plus a single moving camera, several speakers: that camera is almost certainly
+    // operated to follow whoever is talking.
+    var nonWide = cfg.cameras.filter(function (c) { return c.shows.length !== allIds.length || c.follows; });
+    if (cfg.speakers.length > 1 && nonWide.length === 1 && nonWide[0].moving) { nonWide[0].follows = true; nonWide[0].shows = []; }
     return cfg;
   }
 
@@ -282,7 +290,8 @@
       var row = el("div", { class: "row" });
       row.style.setProperty("--sw", camColor(i));
       var name = el("input", { class: "name", value: cm.name, oninput: function () { cm.name = name.value; changed(true); } });
-      var role = cm.shows.length === 0 ? "unused" : cm.shows.length === 1 ? "close-up" : (cm.shows.length === spk.length ? "wide" : cm.shows.length + "-shot");
+      var role = cm.follows ? "follows speaker" : cm.shows.length === 0 ? "unused" : cm.shows.length === 1 ? "close-up" : (cm.shows.length === spk.length ? "wide" : cm.shows.length + "-shot");
+      if (cm.moving) role += " \u00B7 moving";
       row.appendChild(el("div", { class: "row-main" }, [
         name,
         select(trackOptions("video"), cm.videoTrack, function (v) { cm.videoTrack = +v; changed(); }),
@@ -290,14 +299,25 @@
         el("button", { class: "icon", title: "Remove camera", text: "✕", onclick: function () { state.config.cameras.splice(i, 1); renderCameras(); changed(); } })
       ]));
       var chips = el("div", { class: "chips" });
-      spk.forEach(function (sp) {
+      if (!cm.follows) spk.forEach(function (sp) {
         chips.appendChild(chip(sp.name, cm.shows.indexOf(sp.id) >= 0, function (on) {
           cm.shows = cm.shows.filter(function (id) { return id !== sp.id; });
           if (on) cm.shows.push(sp.id);
           renderCameras(); changed();
         }));
       });
+      chips.appendChild(chip("Follows speaker", !!cm.follows, function (on) { cm.follows = on; renderCameras(); renderStyle(); changed(); },
+        "An operator re-frames this camera on whoever is talking: it can show any speaker (never a group or a listener)."));
+      chips.appendChild(chip("Moving camera", !!cm.moving, function (on) { cm.moving = on; renderCameras(); renderStyle(); changed(); },
+        "Dolly, slider, handheld or operated: check its picture for movement and only cut to it when it's steady."));
       chips.appendChild(chip("Enabled", cm.enabled !== false, function (on) { cm.enabled = on; changed(); }));
+      var stab = state.result && state.result.stability && state.result.stability[cm.id];
+      if (cm.moving && stab) {
+        row.appendChild(el("div", { class: "muted small", text: "Steady " + stab.steadyPct + "% \u00B7 slow moves " + stab.slowPct + "% \u00B7 big moves " + stab.fastPct + "%" +
+          (stab.lowDetail ? " \u2014 plain background: movement is hard to judge, treated as steady" : "") }));
+      } else if (cm.moving && state.result) {
+        row.appendChild(el("div", { class: "muted small", text: "Click Analyze to check this camera for movement." }));
+      }
       row.appendChild(chips);
       box.appendChild(row);
     });
@@ -350,13 +370,15 @@
     var box = $("styleControls"); box.innerHTML = "";
     var st = effectiveStyle();
     var base = D.styleFromPreset(state.config.preset, {});
+    var anyMoving = state.config.cameras.some(function (c) { return c.moving && c.enabled !== false; });
     UI.styleGroups.forEach(function (g) {
+      if (g.onlyIfMoving && !anyMoving) return;
       var det = el("details", { class: "group" });
       if (g.open) det.open = true;
       det.appendChild(el("summary", { text: g.title }));
       g.controls.forEach(function (def) {
         var node;
-        var set = function (v) { state.config.style[def.key] = v; node.classList.toggle("changed", v !== base[def.key]); changed(true); };
+        var set = function (v) { if (v === "true") v = true; else if (v === "false") v = false; state.config.style[def.key] = v; node.classList.toggle("changed", v !== base[def.key]); changed(true); };
         if (def.type === "select") {
           node = el("div", { class: "ctl", title: def.help || "" }, [el("label", { text: def.label }),
             select(def.options, st[def.key], function (v) { set(v); })]);
@@ -423,7 +445,8 @@
     if (!spk.length) throw new Error("Add at least one speaker mic.");
     if (!inPremiere) { // demo
       state.curves = window.PD_DEMO.curves(state.seq, state.config, HOP);
-      replan(); status("Demo analysis ready.", "ok", 1); return;
+      state.config.cameras.forEach(function (c) { if (c.moving) state.motion["v:" + c.videoTrack] = window.PD_DEMO.motion(state.seq, c.videoTrack); });
+      replan(); renderCameras(); status("Demo analysis ready.", "ok", 1); return;
     }
     if (!state.tools.ffmpeg) throw new Error("ffmpeg is not available. See Settings.");
     var keys = {}, jobs = [];
@@ -441,11 +464,36 @@
     });
     return A.pool(jobs, 3).then(function () {
       log("Analyzed " + total + " mic track(s) in " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
+      return analyzeMotion();
+    }).then(function () {
       replan();
-      renderSpeakers();
+      renderSpeakers(); renderCameras();
       status("Analysis ready — tweak the style and watch the preview update.", "ok", 1);
     });
   });
+
+  /** Camera-movement check for cameras marked as moving (decodes their video at low resolution). */
+  function analyzeMotion() {
+    var cams = state.config.cameras.filter(function (c) { return c.moving && c.enabled !== false && !state.motion["v:" + c.videoTrack]; });
+    return cams.reduce(function (p, c, i) {
+      return p.then(function () {
+        var track = state.seq.videoTracks[c.videoTrack], t0 = Date.now();
+        if (!track || !track.clips) return;
+        return window.PodMotion.analyzeTrack(track, state.seq.durationSec, { ffmpegPath: state.tools.ffmpeg, onProgress: function (f) {
+          status("Checking " + c.name + " for camera movement\u2026 " + Math.round(f * 100) + "%" + (cams.length > 1 ? " (" + (i + 1) + "/" + cams.length + ")" : ""), "", f);
+        } }).then(function (m) {
+          state.motion["v:" + c.videoTrack] = m;
+          log("Camera movement for " + c.name + " analyzed in " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
+        });
+      });
+    }, Promise.resolve());
+  }
+
+  function cameraMotionInput() {
+    var out = {};
+    state.config.cameras.forEach(function (c) { var m = state.motion["v:" + c.videoTrack]; if (c.moving && m) out[c.id] = m; });
+    return out;
+  }
 
   function curvesReady() {
     return state.config.speakers.filter(function (s) { return s.enabled !== false; }).every(function (s) { return state.curves[curveKey(s)]; });
@@ -456,7 +504,7 @@
     var curves = {};
     state.config.speakers.forEach(function (s) { if (state.curves[curveKey(s)]) curves[s.id] = state.curves[curveKey(s)]; });
     try {
-      state.result = D.plan({ durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves }, state.config);
+      state.result = D.plan({ durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves, cameraMotion: cameraMotionInput() }, state.config);
     } catch (e) { status(e.message, "err"); state.result = null; setButtons(); return; }
     var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
     var cams = state.config.cameras.map(function (c, i) { return { id: c.id, name: c.name, color: camColor(i) }; });
@@ -464,7 +512,11 @@
       durationSec: state.seq.durationSec, hopSec: HOP, curves: curves,
       speakers: spk.map(function (s) { return { id: s.id, name: s.name, color: colorOf(state.config.speakers.indexOf(s)) }; }),
       calibration: state.result.calibration, speech: state.result.speech, shots: state.result.shots,
-      cameras: cams, cleanup: acceptedCuts()
+      cameras: cams, cleanup: acceptedCuts(),
+      motion: Object.keys(state.result.stability || {}).map(function (id) {
+        var c = cams.filter(function (x) { return x.id === id; })[0];
+        return { id: id, name: c ? c.name : id, hopSec: state.result.stability[id].hopSec, states: state.result.stability[id].states };
+      })
     });
     $("vizHint").textContent = "click = jump playhead · drag = lock a camera · wheel = zoom";
     renderStats(); setButtons();
@@ -611,7 +663,12 @@
         "Edit `config` (speakers, cameras, preset, style, overrides) and import it back via Settings > Import settings.",
       exportedAt: new Date().toISOString(), engineVersion: D.VERSION,
       sequence: { name: state.seq.name, fps: state.seq.fps, durationSec: state.seq.durationSec },
-      input: { durationSec: state.seq.durationSec, hopSec: HOP * down, fps: state.seq.fps, curves: curves },
+      input: { durationSec: state.seq.durationSec, hopSec: HOP * down, fps: state.seq.fps, curves: curves,
+        cameraMotion: (function () {
+          var m = cameraMotionInput(), o = {};
+          Object.keys(m).forEach(function (id) { o[id] = { hopSec: m[id].hopSec, values: Array.prototype.map.call(m[id].values, function (v) { return isNaN(v) ? null : Math.round(v * 10) / 10; }) }; });
+          return o;
+        })() },
       config: cleanConfig(state.config),
       result: { calibration: state.result.calibration, stats: state.result.stats, shots: state.result.shots },
       cleanup: state.tx.suggestions.length ? state.tx.suggestions : undefined

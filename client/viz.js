@@ -79,7 +79,8 @@
     }
     var RULER = 14, STRIP = 30, GAP = 4;
     var lanes = d.speakers.length;
-    var laneH = Math.max(14, (H - RULER - STRIP - GAP * 2) / Math.max(1, lanes));
+    var motionLanes = d.motion || [], ML = 9;
+    var laneH = Math.max(14, (H - RULER - STRIP - GAP * 2 - motionLanes.length * ML) / Math.max(1, lanes));
     var self = this;
     var t0 = this.view.start, t1 = t0 + this.view.span;
 
@@ -133,6 +134,23 @@
       ctx.fillStyle = "#ddd"; ctx.fillText(sp.name, 4, y0 + 11);
     });
 
+    // camera movement lanes: green = steady, amber = slow move, red = big move
+    var MCOL = ["rgba(73,199,138,.55)", "rgba(230,180,80,.9)", "rgba(239,93,93,.95)"];
+    motionLanes.forEach(function (m, k) {
+      var y = H - STRIP - GAP - (motionLanes.length - k) * ML;
+      ctx.fillStyle = "#1c1c1c"; ctx.fillRect(0, y, W, ML - 2);
+      var n = m.states.length;
+      for (var px = 0; px < W; px++) {
+        var ia = Math.max(0, Math.floor(self.tOf(px) / m.hopSec)), ib = Math.min(n, Math.max(ia + 1, Math.ceil(self.tOf(px + 1) / m.hopSec)));
+        var worst = -1;
+        for (var q = ia; q < ib; q++) if (m.states[q] > worst) worst = m.states[q];
+        if (worst < 0) continue;
+        ctx.fillStyle = MCOL[worst]; ctx.fillRect(px, y, 1, ML - 2);
+      }
+      ctx.save(); ctx.font = "8px -apple-system, Segoe UI, sans-serif"; ctx.fillStyle = "rgba(255,255,255,.85)";
+      ctx.fillText(m.name + " movement", 4, y + ML - 3); ctx.restore();
+    });
+
     // camera strip
     var sy = H - STRIP;
     var camById = {};
@@ -173,7 +191,7 @@
     }
   };
 
-  var REASON = { reaction: "react", cutaway: "cutaway", crosstalk: "overlap", pause: "pause", opening: "open", locked: "locked", "interjection-wide": "react" };
+  var REASON = { reaction: "react", cutaway: "cutaway", crosstalk: "overlap", pause: "pause", opening: "open", locked: "locked", "interjection-wide": "react", "camera-move": "cam moving" };
   function fmt(t) { var m = Math.floor(t / 60), s = Math.floor(t % 60); return (m >= 60 ? Math.floor(m / 60) + ":" + pad(m % 60) : m) + ":" + pad(s); }
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
   function hexA(hex, a) {

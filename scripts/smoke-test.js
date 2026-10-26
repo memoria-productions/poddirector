@@ -7,6 +7,9 @@ const ext = process.env.PD_EXT || path.resolve(__dirname, "..");
 const A = require(path.join(ext, "engine", "analyzer.js"));
 const W = require(path.join(ext, "engine", "transcriber.js"));
 const T = require(path.join(ext, "engine", "transcript.js"));
+const M = require(path.join(ext, "engine", "motion.js"));
+const cp = require("child_process");
+const os = require("os");
 const wav = path.resolve(process.argv[2]);
 
 (async () => {
@@ -30,5 +33,16 @@ const wav = path.resolve(process.argv[2]);
   if (!/ask not what your country/.test(text)) throw new Error("unexpected transcript");
   if (segs[0].startSec < 1.8 || segs[0].startSec > 3) throw new Error("timestamps not aligned to sequence time");
   console.log("cleanup scan:", T.analyze(segs).suggestions.length, "suggestions (expected 0)");
+
+  // Camera-motion analysis with the bundled ffmpeg (video decode path). LGPL ffmpeg has no x264: use mpeg4.
+  const vid = path.join(os.tmpdir(), "pd-smoke-pan.avi"), still = path.join(os.tmpdir(), "pd-smoke-still.png");
+  cp.spawnSync(f.path, ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "nullsrc=s=1920x1080,geq=lum='random(1)*255':cb=128:cr=128,gblur=sigma=4", "-frames:v", "1", still]);
+  const g = cp.spawnSync(f.path, ["-loglevel", "error", "-y", "-loop", "1", "-framerate", "30", "-t", "6", "-i", still,
+    "-vf", "crop=960:540:x='200+min(t,3)*150':y=200", "-c:v", "mpeg4", "-q:v", "3", vid]);
+  if (g.status !== 0) throw new Error("could not make test video: " + g.stderr);
+  const m = await M.analyzeTrack({ clips: [{ startSec: 0, endSec: 6, inPointSec: 0, mediaPath: vid }] }, 6, { ffmpegPath: f.path });
+  const avg = (a, b) => { const v = Array.from(m.values.slice(Math.round(a / m.hopSec), Math.round(b / m.hopSec))).filter((x) => !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : NaN; };
+  console.log("camera motion while panning: " + avg(0.5, 2.5).toFixed(1) + " %/s, after: " + avg(3.5, 5.5).toFixed(1) + " %/s");
+  if (!(avg(0.5, 2.5) > 6) || !(avg(3.5, 5.5) < 3)) throw new Error("camera motion analysis looks wrong");
   console.log("SMOKE TEST PASSED");
 })().catch((e) => { console.error("SMOKE TEST FAILED:", e.message); process.exit(1); });

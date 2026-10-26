@@ -74,17 +74,21 @@ var PD = (function () {
     }
     for (i = 0; i < seq.videoTracks.numTracks; i++) {
       track = seq.videoTracks[i];
-      var first = null, n = track.clips.numItems, endMax = 0, media = [], seen = {};
+      var first = null, n = track.clips.numItems, endMax = 0, media = [], seen = {}, vclips = [];
       for (j = 0; j < n; j++) {
         clip = track.clips[j];
         if (!first) first = clip.name;
         endMax = Math.max(endMax, sec(clip.end));
+        mp = null; speed = 1;
         try {
           mp = clip.projectItem ? clip.projectItem.getMediaPath() : null;
           if (mp && !seen[mp] && media.length < 50) { seen[mp] = true; media.push(mp); }
         } catch (e4) { /* graphics, nested sequences */ }
+        try { if (typeof clip.getSpeed === "function") speed = clip.getSpeed(); } catch (e5) { speed = 1; }
+        // Clip list for camera-motion analysis (capped: camera tracks rarely have more).
+        if (vclips.length < 400) vclips.push({ startSec: sec(clip.start), endSec: sec(clip.end), inPointSec: sec(clip.inPoint), mediaPath: mp, speed: speed });
       }
-      info.videoTracks.push({ index: i, name: track.name || ("V" + (i + 1)), clipCount: n, firstClip: first, endSec: endMax, mediaPaths: media });
+      info.videoTracks.push({ index: i, name: track.name || ("V" + (i + 1)), clipCount: n, firstClip: first, endSec: endMax, mediaPaths: media, clips: vclips });
     }
     return ok(info);
   }

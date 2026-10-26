@@ -10,7 +10,7 @@
         { index: 0, name: "Wide", clipCount: 1, firstClip: "CAM_WIDE.mp4", endSec: DUR, mediaPaths: ["/demo/wide.mp4"] },
         { index: 1, name: "Host CU", clipCount: 1, firstClip: "CAM_A.mp4", endSec: DUR, mediaPaths: ["/demo/a.mp4"] },
         { index: 2, name: "Cohost CU", clipCount: 1, firstClip: "CAM_B.mp4", endSec: DUR, mediaPaths: ["/demo/b.mp4"] },
-        { index: 3, name: "Guest CU", clipCount: 1, firstClip: "CAM_C.mp4", endSec: DUR, mediaPaths: ["/demo/c.mp4"] }
+        { index: 3, name: "Guest dolly", clipCount: 1, firstClip: "CAM_C.mp4", endSec: DUR, mediaPaths: ["/demo/c.mp4"] }
       ]
     };
   }
@@ -76,5 +76,17 @@
     ];
   }
 
-  window.PD_DEMO = { sequence: sequence, curves: curves, transcript: transcript };
+  /** Camera motion for a dolly: occasional repositions, gentle push-ins, otherwise steady. */
+  function motion(seq, track) {
+    var hop = 1 / 6, n = Math.ceil(DUR / hop), v = new Float32Array(n), seed = 11 + track;
+    function r() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var i = 0; i < n; i++) v[i] = r() * 0.5;
+    for (var t = 15; t < DUR - 10; t += 25 + r() * 30) {
+      var fast = r() < 0.55, len = fast ? 1 + r() * 2 : 3 + r() * 4, val = fast ? 8 + r() * 12 : 1.8 + r() * 2.5;
+      for (i = Math.round(t / hop); i < Math.min(n, Math.round((t + len) / hop)); i++) v[i] = val + r();
+    }
+    return { hopSec: hop, values: v };
+  }
+
+  window.PD_DEMO = { sequence: sequence, curves: curves, transcript: transcript, motion: motion };
 })();

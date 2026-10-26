@@ -31,6 +31,20 @@ window.PD_UI = {
       { key: "reactionShotSec", label: "Reaction shot", min: 0.6, max: 4, step: 0.1, unit: "s",
         help: "How long a reaction shot stays up." }
     ]},
+    { title: "Moving cameras", open: false, onlyIfMoving: true, controls: [
+      { key: "steadyMaxPct", label: "Steady below", min: 0.3, max: 4, step: 0.1, unit: "%/s",
+        help: "Camera motion under this (percent of frame width per second) counts as steady. Raise it if a slightly floaty dolly never counts as steady." },
+      { key: "fastMinPct", label: "Big move above", min: 2, max: 30, step: 0.5, unit: "%/s",
+        help: "Motion over this is a reposition or whip: always cut away from it." },
+      { key: "settleSec", label: "Settle time", min: 0, max: 3, step: 0.1, unit: "s",
+        help: "The camera must have been steady this long before PodDirector cuts to it." },
+      { key: "maxWaitSec", label: "Wait to settle", min: 0, max: 4, step: 0.1, unit: "s",
+        help: "If a cut would land mid-move, hold the previous shot up to this long for the camera to settle. Longer moves go to the wide." },
+      { key: "slowMovesOnAir", label: "Slow moves on air", type: "select",
+        options: [[true, "Keep gentle push-ins/drifts on air"], [false, "Cut away from any movement"]],
+        help: "Once on the moving camera, should gentle moves stay on screen?" },
+      { key: "movePadSec", label: "Leave move early by", min: 0, max: 1, step: 0.05, unit: "s" }
+    ]},
     { title: "Long monologues", open: false, controls: [
       { key: "maxShotSec", label: "Break shots over", min: 0, max: 60, step: 1, unit: "s", zero: "never",
         help: "Insert a cutaway when one shot runs longer than this. 0 = never." },

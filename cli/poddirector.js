@@ -62,6 +62,7 @@ function cmdPlan(args) {
   const file = args._[1];
   if (!file) throw new Error("Usage: plan <analysis.json>");
   const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  Object.values(doc.input.cameraMotion || {}).forEach((m) => { m.values = m.values.map((v) => (v === null ? NaN : v)); });
   const base = JSON.parse(JSON.stringify(args.config ? JSON.parse(fs.readFileSync(args.config, "utf8")).config || JSON.parse(fs.readFileSync(args.config, "utf8")) : doc.config));
   base.style = base.style || {};
   if (args.preset) { base.preset = args.preset; base.style = {}; }

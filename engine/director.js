@@ -60,6 +60,13 @@
     cutawaySec: 3.0,           // cutaway length
     // Angles
     angleVariety: "rotate",    // "first" | "rotate" | "random"  (speakers with several close-ups)
+    // Moving cameras (dolly, slider, handheld, operated cams) — needs camera motion analysis
+    steadyMaxPct: 1.2,         // below this much camera motion (% of frame width per second) = steady
+    fastMinPct: 6,             // above this = a real move/reposition; never on air
+    settleSec: 0.6,            // camera must have been steady this long before we cut to it
+    maxWaitSec: 1.5,           // hold the previous shot up to this long waiting for the camera to settle
+    slowMovesOnAir: true,      // once on the shot, gentle moves (push-ins, drifts) may stay on air
+    movePadSec: 0.2,           // leave a move this early / come back this late
     // Misc
     seed: 7,
     snapToFrames: true
@@ -348,18 +355,31 @@
       var shows = (c.shows || []).map(function (id) { return ids.indexOf(id); }).filter(function (x) { return x >= 0; });
       return { cam: c, shows: shows };
     });
+    // "Follow" cams (an operator re-frames on whoever is talking) count as a close-up of every speaker,
+    // but never as a group shot and never as a listener/reaction shot.
+    var fixed = cams.filter(function (c) { return !c.cam.follows; });
+    var follow = cams.filter(function (c) { return c.cam.follows; });
     var widest = null;
-    cams.forEach(function (c) { if (!widest || c.shows.length > widest.shows.length) widest = c; });
+    (fixed.length ? fixed : cams).forEach(function (c) { if (!widest || c.shows.length > widest.shows.length) widest = c; });
+    function fixedCloseups(si) {
+      return fixed.filter(function (c) { return c.shows.length === 1 && c.shows[0] === si; }).map(function (c) { return c.cam.id; });
+    }
     return {
       list: cams,
-      widest: widest && widest.shows.length > 1 ? widest.cam.id : (widest ? widest.cam.id : null),
+      widest: widest ? widest.cam.id : null,
       hasWide: !!(widest && widest.shows.length > 1),
+      isFollow: function (id) { return follow.some(function (c) { return c.cam.id === id; }); },
+      fixedCloseups: fixedCloseups,
       closeups: function (si) {
-        return cams.filter(function (c) { return c.shows.length === 1 && c.shows[0] === si; }).map(function (c) { return c.cam.id; });
+        return fixedCloseups(si).concat(follow.map(function (c) { return c.cam.id; }));
       },
       cover: function (set) {
+        if (set.length === 1 && follow.length && !fixedCloseups(set[0]).length) {
+          var direct = fixed.filter(function (c) { return sameSet(c.shows, set); });
+          if (!direct.length) return follow[0].cam.id;
+        }
         var best = null;
-        cams.forEach(function (c) {
+        fixed.forEach(function (c) {
           if (sameSet(c.shows, set)) { if (!best || best.exact !== true) best = { id: c.cam.id, size: c.shows.length, exact: true }; return; }
           if (isSuperset(c.shows, set) && (!best || (!best.exact && c.shows.length < best.size))) best = { id: c.cam.id, size: c.shows.length };
         });
@@ -442,6 +462,9 @@
         // A shot that opens on a breath or overlap but settles on one speaker is a speaker shot.
         if ((last.reason === "pause" || last.reason === "hold" || last.reason === "crosstalk") && s.reason === "speaker") {
           last.reason = s.reason; last.speakers = s.speakers.slice();
+        } else if (last.reason === "speaker" && s.reason === "speaker") {
+          // e.g. a follow cam that stays up across a change of speaker
+          (s.speakers || []).forEach(function (x) { if (last.speakers.indexOf(x) < 0) last.speakers.push(x); });
         }
       } else out.push(copyShot(s));
     });
@@ -497,7 +520,7 @@
       // Leave room so the host shot survives on both sides.
       var room = Math.round(Math.min(style.minShotSec, 1.0) * fr);
       if (a - host.start < room || host.end - b < room) return;
-      var cam = style.interjectionMode === "wide" ? ctx.ci.widest : (ctx.ci.closeups(ij.speaker)[0] || ctx.ci.cover([ij.speaker]));
+      var cam = style.interjectionMode === "wide" ? ctx.ci.widest : ctx.ci.fixedCloseups(ij.speaker)[0];
       if (!cam || cam === host.cameraId) return;
       shots = insertShot(shots, { start: a, end: b, cameraId: cam,
         reason: style.interjectionMode === "wide" ? "interjection-wide" : "reaction",
@@ -545,12 +568,12 @@
     var si = s.speakers[0];
     var listeners = [];
     for (var i = 0; i < speakers.length; i++) {
-      if (i !== si && speakers[i].reactionShots !== false && ci.closeups(i).length) listeners.push(i);
+      if (i !== si && speakers[i].reactionShots !== false && ci.fixedCloseups(i).length) listeners.push(i);
     }
     var alt = ci.closeups(si).filter(function (id) { return id !== s.cameraId; });
     var options = {
       wide: ci.hasWide ? ci.widest : null,
-      reaction: listeners.length ? ci.closeups(listeners[Math.floor(ctx.rand() * listeners.length)])[0] : null,
+      reaction: listeners.length ? ci.fixedCloseups(listeners[Math.floor(ctx.rand() * listeners.length)])[0] : null,
       alternate: alt.length ? alt[n % alt.length] : null
     };
     var order;
@@ -606,6 +629,114 @@
     return shots;
   }
 
+  // ------------------------------------------------ 9b. moving cameras
+
+  var STEADY = 0, SLOW = 1, FAST = 2;
+
+  /** Per moving camera: motion curve -> steady/slow/fast state on the decision grid. */
+  function buildStability(input, cameras, style, ctx) {
+    var out = {}, info = {};
+    var motion = input.cameraMotion || {};
+    cameras.forEach(function (c) {
+      var m = motion[c.id];
+      if (!c.moving || !m || !m.values || !m.values.length) return;
+      var v = m.values, n = v.length, mhop = m.hopSec;
+      // Median over ~0.8 s ignores single-frame glitches (a hand crossing frame, a compression hiccup).
+      var med = new Float32Array(n), known = 0;
+      for (var i = 0; i < n; i++) {
+        var win = [];
+        for (var k = Math.max(0, i - 2); k <= Math.min(n - 1, i + 2); k++) if (!isNaN(v[k])) win.push(v[k]);
+        win.sort(function (a, b) { return a - b; });
+        med[i] = win.length ? win[win.length >> 1] : NaN;
+        if (!isNaN(v[i])) known++;
+      }
+      // If the picture is usually readable, an unreadable stretch means something big is changing:
+      // treat it as a slow move. If it's rarely readable (plain backdrop), we can't judge: assume steady.
+      var readable = known / n >= 0.5;
+      var st = new Uint8Array(n), counts = [0, 0, 0];
+      for (i = 0; i < n; i++) {
+        var x = med[i];
+        st[i] = isNaN(x) ? (readable ? SLOW : STEADY) : (x >= style.fastMinPct ? FAST : (x > style.steadyMaxPct ? SLOW : STEADY));
+        counts[st[i]]++;
+      }
+      var grid = new Uint8Array(ctx.frames);
+      for (var f = 0; f < ctx.frames; f++) { var j = Math.floor(f / ctx.fr / mhop); grid[f] = j < n ? st[j] : STEADY; }
+      out[c.id] = grid;
+      info[c.id] = { hopSec: mhop, states: Array.prototype.slice.call(st),
+        steadyPct: round1(100 * counts[0] / n), slowPct: round1(100 * counts[1] / n), fastPct: round1(100 * counts[2] / n),
+        lowDetail: !readable };
+    });
+    return { grid: out, info: info };
+  }
+
+  function stabilityHelpers(stab, style, ctx) {
+    var settle = Math.max(1, Math.round(style.settleSec * ctx.fr));
+    var pad = Math.round(style.movePadSec * ctx.fr);
+    function state(cam, f) { var g = stab.grid[cam]; return g && f >= 0 && f < g.length ? g[f] : STEADY; }
+    function onAir(cam, f) { var s = state(cam, f); return s === STEADY || (s === SLOW && style.slowMovesOnAir); }
+    function settled(cam, f) {
+      if (!stab.grid[cam]) return true;
+      for (var k = Math.max(0, f - settle); k <= f; k++) if (state(cam, k) !== STEADY) return false;
+      return true;
+    }
+    function okFrom(cam, f) { for (var k = f; k <= f + pad; k++) if (!onAir(cam, k)) return false; return true; }
+    function canShow(cam, a, b) {
+      if (!stab.grid[cam]) return true;
+      for (var f = a; f < b; f++) if (!onAir(cam, f)) return false;
+      return true;
+    }
+    return { state: state, onAir: onAir, settled: settled, okFrom: okFrom, canShow: canShow, has: function (c) { return !!stab.grid[c]; } };
+  }
+
+  /** Only cut to a moving camera once it has settled; cut away while it moves. */
+  function applyStability(shots, style, ctx) {
+    var H = ctx.stable;
+    if (!Object.keys(ctx.stability.grid).length) return shots;
+    var maxWait = Math.round(style.maxWaitSec * ctx.fr);
+    var out = [];
+    function fallbackFor(s, a, b) {
+      var ci = ctx.ci, cands = [ci.widest];
+      (s.speakers || []).forEach(function (si) { cands = cands.concat(ci.fixedCloseups(si)); });
+      cands = cands.concat(ci.list.map(function (c) { return c.cam.id; }));
+      for (var i = 0; i < cands.length; i++) if (cands[i] && cands[i] !== s.cameraId && H.canShow(cands[i], a, b)) return cands[i];
+      return null;
+    }
+    shots.forEach(function (s) {
+      var cam = s.cameraId;
+      if (s.locked || !H.has(cam)) { out.push(s); return; }
+      var start = s.start;
+      // 1) Cutting in mid-move: wait for the camera to settle by holding the previous shot a little longer.
+      var prev = out[out.length - 1];
+      if (!H.settled(cam, start) && prev && !prev.locked && prev.end === start) {
+        for (var t = start + 1; t <= Math.min(s.end - 1, start + maxWait); t++) {
+          if (H.settled(cam, t) && H.okFrom(cam, t)) {
+            if (H.canShow(prev.cameraId, start, t)) { prev.end = t; start = t; }
+            break;
+          }
+        }
+      }
+      // 2) Walk the shot: on air while the camera is usable, cut away while it moves, return once settled.
+      var pieces = [], on = H.settled(cam, start) && H.okFrom(cam, start), from = start;
+      for (var f = start; f < s.end; f++) {
+        var want = on ? H.okFrom(cam, f) : (H.settled(cam, f) && H.okFrom(cam, f));
+        if (want !== on) { pieces.push({ a: from, b: f, on: on }); from = f; on = want; }
+      }
+      pieces.push({ a: from, b: s.end, on: on });
+      pieces.forEach(function (p, i) {
+        if (p.b <= p.a) return;
+        var piece = copyShot(s);
+        piece.start = p.a; piece.end = p.b; piece.onset = s.onset && p.a === s.start;
+        if (!p.on) {
+          var fb = fallbackFor(s, p.a, p.b);
+          if (fb) { piece.cameraId = fb; piece.reason = "camera-move"; piece.keepShort = true; piece.onset = false; }
+        }
+        out.push(piece);
+        void i;
+      });
+    });
+    return mergeShots(out);
+  }
+
   // ------------------------------------------------------- 10. cleanup
 
   function enforceMinShot(shots, speakers, style, ctx) {
@@ -630,7 +761,9 @@
       if (worst < 0) break;
       var sh = shots[worst], before = shots[worst - 1], after = shots[worst + 1];
       var target = null;
-      var okB = before && !before.locked, okA = after && !after.locked;
+      var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+      var okB = before && !before.locked && canShow(before.cameraId, sh.start, sh.end);
+      var okA = after && !after.locked && canShow(after.cameraId, sh.start, sh.end);
       if (okB && okA) target = (before.cameraId === after.cameraId || (before.end - before.start) >= (after.end - after.start)) ? before : after;
       else if (okB) target = before; else if (okA) target = after;
       if (!target) { sh.locked = true; sh._pinned = true; continue; }
@@ -687,6 +820,9 @@
     shots = applyInterjections(shots, classified.interjections, speakers, style, ctx);
     shots = applyCutaways(shots, speakers, style, ctx);
     shots = applyTiming(shots, style, ctx);
+    ctx.stability = buildStability(input, cameras, style, ctx);
+    ctx.stable = stabilityHelpers(ctx.stability, style, ctx);
+    shots = applyStability(shots, style, ctx);
     shots = enforceMinShot(shots, speakers, style, ctx);
     shots = applyOverrides(shots, config.overrides, ctx);
     shots = mergeShots(shots);
@@ -714,6 +850,7 @@
         return { speakerId: speakers[ij.speaker].id, startSec: round3(ij.start * hop), endSec: round3(ij.end * hop) };
       }),
       stats: computeStats(outShots, runs, speakers, cameras, input.durationSec, hop),
+      stability: ctx.stability.info,
       style: style
     };
   }
@@ -765,7 +902,7 @@
   }
 
   return {
-    VERSION: "0.1.0",
+    VERSION: "0.2.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
