@@ -24,7 +24,13 @@ if ($Uninstall) {
 }
 
 if (-not (Test-Path (Join-Path $source "CSXS\manifest.xml"))) {
-  Say "Can't find the PodDirector folder next to this installer ($source)." Red
+  if (Test-Path (Join-Path $PSScriptRoot "..\CSXS\manifest.xml")) {
+    Say "This is the PodDirector *source code*, not the installer package." Red
+    Say "Download PodDirector-x.y.z-Windows.zip from the Assets list on:" Yellow
+    Say "  https://github.com/memoria-productions/poddirector/releases/latest" Yellow
+  } else {
+    Say "Can't find the PodDirector folder next to this installer ($source)." Red
+  }
   exit 1
 }
 
