@@ -147,3 +147,15 @@ test("each channel of a multichannel file is analyzed separately", { skip: !hasF
   for (const ch of [0, 1, 2, 3]) lv.push((await A.analyzeRange(f, 0, 1.5, ch))[20]);
   for (let i = 1; i < 4; i++) assert.ok(lv[i - 1] - lv[i] > 15, "channel " + i + " should be ~20 dB quieter: " + lv.map((x) => x.toFixed(1)));
 });
+
+test("a clip without the requested channel falls back to its full mix instead of failing", { skip: !hasFfmpeg }, async () => {
+  const four = path.join(dir, "four.wav");
+  const warnings = [];
+  const curve = await A.analyzeTrack({ clips: [
+    { startSec: 0, endSec: 1.5, inPointSec: 0, mediaPath: four, channel: 3 },
+    { startSec: 2, endSec: 4, inPointSec: 0, mediaPath: wav, channel: 3 } // stereo file: no 4th channel
+  ] }, 5, { onWarning: (m) => warnings.push(m) });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /full mix/);
+  assert.ok(curve[Math.round(3 / A.DEFAULT_HOP)] > -60, "outro clip still analyzed");
+});

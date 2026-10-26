@@ -145,3 +145,16 @@ test("updater picks the newest package in an update folder", async () => {
   assert.equal((await U.check({ current: "0.10.0", folder: d, github: false })).newer, false);
   assert.equal(U.compare("v1.2.10", "1.2.9"), 1);
 });
+
+test("planRange cuts only between the In and Out marks", () => {
+  const input = makeCurves([["A", 2, 40], ["B", 40.5, 70], ["A", 70.5, 100]], { durationSec: 110 });
+  const r = D.planRange(input, { speakers, cameras }, 30, 90);
+  assert.equal(r.shots[0].startSec, 30);
+  assert.equal(r.shots[r.shots.length - 1].endSec, 90);
+  assert.equal(r.shots[0].reason, "opening", "opens on the wide at the In mark, not at 0");
+  assert.equal(at(r, 60).cameraId, "cB");
+  const p = D.toEditPayload(r, cameras, 30);
+  assert.equal(p.cutFrames[0], 900, "razor at the In mark");
+  assert.equal(p.cutFrames[p.cutFrames.length - 1], 2700, "and at the Out mark, so the outro is untouched");
+  assert.ok(p.shots.every((s) => s.startFrame >= 900 && s.endFrame <= 2700));
+});

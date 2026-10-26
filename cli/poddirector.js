@@ -73,7 +73,7 @@ function cmdPlan(args) {
   presets.forEach((p) => {
     const cfg = JSON.parse(JSON.stringify(base));
     if (p) { cfg.preset = p; cfg.style = {}; applySets(cfg, args.set.filter((s) => !/^preset=/.test(s))); }
-    const r = D.plan(doc.input, cfg);
+    const r = doc.range ? D.planRange(doc.input, cfg, doc.range.startSec, doc.range.endSec) : D.plan(doc.input, cfg);
     last = { config: cfg, result: r };
     const names = Object.fromEntries(cfg.cameras.map((c) => [c.id, c.name]));
     rows.push([cfg.preset + (Object.keys(cfg.style).length ? "*" : ""), r.stats.cuts, r.stats.cutsPerMinute, r.stats.avgShotSec,

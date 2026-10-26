@@ -258,7 +258,14 @@
       return chain.then(function () {
         var speed = clip.speed && isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
         var tlDur = clip.endSec - clip.startSec;
-        return analyzeRange(clip.mediaPath, clip.inPointSec || 0, tlDur * speed, channel, hop).then(function (vals) {
+        // A clip can carry its own channel (multichannel files); otherwise the track-wide one applies.
+        var ch = clip.channel !== undefined ? clip.channel : channel;
+        return analyzeRange(clip.mediaPath, clip.inPointSec || 0, tlDur * speed, ch, hop).catch(function (err) {
+          // One odd clip (fewer channels, unreadable) shouldn't stop the whole analysis: fall back to its full mix.
+          if (ch === null || ch === undefined) throw err;
+          if (opts.onWarning) opts.onWarning(err.message + " Using that clip's full mix instead.");
+          return analyzeRange(clip.mediaPath, clip.inPointSec || 0, tlDur * speed, null, hop);
+        }).then(function (vals) {
           var startIdx = Math.round(clip.startSec / hop);
           var n = Math.round(tlDur / hop);
           for (var k = 0; k < n; k++) {

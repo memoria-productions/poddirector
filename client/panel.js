@@ -207,6 +207,58 @@
     Object.keys(votes).forEach(function (k) { if (votes[k] > n) { n = votes[k]; best = +k; } });
     return best;
   }
+  /** Channel of one clip: its position among the tracks that carry the same file at the same time, or null. */
+  function clipChannel(info, trackIndex, clip) {
+    var group = info.audioTracks.filter(function (t) {
+      return t.clips.some(function (o) { return o.mediaPath === clip.mediaPath && Math.abs(o.startSec - clip.startSec) < 0.02 && Math.abs(o.inPointSec - clip.inPointSec) < 0.02; });
+    }).map(function (t) { return t.index; }).sort(function (a, b) { return a - b; });
+    return group.length > 1 ? group.indexOf(trackIndex) : null;
+  }
+  /**
+   * The speaker's track with a channel decided per clip: auto mode follows each clip's own layout (the episode's
+   * 4-channel file, a mono outro WAV...); a channel picked by hand applies to clips that are part of a group.
+   */
+  // ------------------------------------------------------------ range
+  /** Active analysis range in sequence seconds ({a, b}), or null for the whole sequence. */
+  function currentRange() {
+    var q = state.seq;
+    if (!q || state.config.range === "all") return null;
+    var a = q.inSec || 0, b = q.outSec || q.durationSec;
+    if (q.inSec == null && q.outSec == null) return null;
+    return b - a > 1 ? { a: a, b: b } : null;
+  }
+  function renderRangeSelect() {
+    var s = $("rangeSelect"), q = state.seq; s.innerHTML = "";
+    var marks = q && (q.inSec != null || q.outSec != null);
+    if (marks) s.appendChild(el("option", { value: "inout", text: "Between In and Out marks (" + fmt(q.inSec || 0) + " \u2013 " + fmt(q.outSec || q.durationSec) + ")" }));
+    s.appendChild(el("option", { value: "all", text: "Whole sequence" + (q ? " (" + fmt(q.durationSec) + ")" : "") + (q && !marks ? " \u2014 set In/Out marks to limit" : "") }));
+    s.value = marks && state.config.range !== "all" ? "inout" : "all";
+    s.disabled = !q;
+  }
+  /** Trim a track's clips to the analysis range (keeps source in-points in step). */
+  function trimToRange(track) {
+    var r = currentRange();
+    if (!r) return track;
+    var out = {}; for (var k in track) out[k] = track[k];
+    out.clips = (track.clips || []).filter(function (c) { return c.endSec > r.a && c.startSec < r.b; }).map(function (c) {
+      var cc = copy(c), speed = c.speed > 0 ? c.speed : 1;
+      if (cc.startSec < r.a) { cc.inPointSec = (cc.inPointSec || 0) + (r.a - cc.startSec) * speed; cc.startSec = r.a; }
+      if (cc.endSec > r.b) cc.endSec = r.b;
+      return cc;
+    });
+    return out;
+  }
+
+  function speakerTrack(sp) {
+    var info = state.seq, t = info.audioTracks[sp.audioTrack];
+    return trimToRange({ index: t.index, name: t.name, clips: t.clips.map(function (c) {
+      var cc = copy(c), auto = clipChannel(info, sp.audioTrack, c);
+      if (sp.channelManual) cc.channel = (sp.channel === null || sp.channel === undefined) ? null : (auto === null ? null : sp.channel);
+      else cc.channel = auto;
+      return cc;
+    }) });
+  }
+
   /** Set channels for speakers left on "All ch" whose track is part of a multichannel group. Returns how many changed. */
   function fixChannels(cfg, info) {
     var changedN = 0;
@@ -436,7 +488,7 @@
 
   // ------------------------------------------------------------ render
   function renderAll() {
-    renderSetupSelect(); renderSpeakers(); renderCameras(); renderPresetSelect(); renderStyle(); renderLocks(); setButtons();
+    renderSetupSelect(); renderRangeSelect(); renderSpeakers(); renderCameras(); renderPresetSelect(); renderStyle(); renderLocks(); setButtons();
   }
 
   function colorOf(i) { return UI.colors[i % UI.colors.length]; }
@@ -684,15 +736,20 @@
   }
 
   // ------------------------------------------------------------ analyze
-  function curveKey(sp) { return sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel); }
+  function rangeKey() { var r = currentRange(); return r ? "@" + r.a.toFixed(2) + "-" + r.b.toFixed(2) : ""; }
+  function curveKey(sp) { return sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel) + (sp.channelManual ? "m" : "a") + rangeKey(); }
 
   var analyze = guard(function () {
     if (!state.seq) throw new Error("Scan a sequence first.");
     var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
     if (!spk.length) throw new Error("Add at least one speaker mic.");
     if (!inPremiere) { // demo
-      state.curves = window.PD_DEMO.curves(state.seq, state.config, HOP);
-      state.config.cameras.forEach(function (c) { if (c.moving) state.motion["v:" + c.videoTrack] = window.PD_DEMO.motion(state.seq, c.videoTrack); });
+      var demoCurves = window.PD_DEMO.curves(state.seq, state.config, HOP);
+      state.config.speakers.forEach(function (sp) {
+        var dk = sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel) + (sp.channelManual ? "m" : "a");
+        state.curves[curveKey(sp)] = demoCurves[dk];
+      });
+      state.config.cameras.forEach(function (c) { if (c.moving) state.motion["v:" + c.videoTrack + rangeKey()] = window.PD_DEMO.motion(state.seq, c.videoTrack); });
       replan(); renderCameras(); status("Demo analysis ready.", "ok", 1); return;
     }
     if (!state.tools.ffmpeg) throw new Error("ffmpeg is not available. See Settings.");
@@ -702,9 +759,9 @@
     var t0 = Date.now();
     status("Reading waveforms (0/" + total + ")…", "", 0.02);
     Object.keys(keys).forEach(function (k) {
-      var sp = keys[k], track = state.seq.audioTracks[sp.audioTrack];
+      var sp = keys[k], track = speakerTrack(sp);
       jobs.push(function () {
-        return A.analyzeTrack(track, dur, { hopSec: HOP, channel: sp.channel, onProgress: function (i, n) {
+        return A.analyzeTrack(track, dur, { hopSec: HOP, channel: sp.channel, onWarning: function (m) { log("Note: " + m); }, onProgress: function (i, n) {
           status("Reading " + track.name + " clip " + i + "/" + n + " (" + done + "/" + total + " tracks done)…", "", (done + i / n) / total);
         } }).then(function (curve) { state.curves[k] = curve; done++; });
       });
@@ -722,15 +779,15 @@
 
   /** Camera-movement check for cameras marked as moving (decodes their video at low resolution). */
   function analyzeMotion() {
-    var cams = state.config.cameras.filter(function (c) { return c.moving && c.enabled !== false && !state.motion["v:" + c.videoTrack]; });
+    var cams = state.config.cameras.filter(function (c) { return c.moving && c.enabled !== false && !state.motion["v:" + c.videoTrack + rangeKey()]; });
     return cams.reduce(function (p, c, i) {
       return p.then(function () {
-        var track = state.seq.videoTracks[c.videoTrack], t0 = Date.now();
+        var track = trimToRange(state.seq.videoTracks[c.videoTrack]), t0 = Date.now();
         if (!track || !track.clips) return;
         return window.PodMotion.analyzeTrack(track, state.seq.durationSec, { ffmpegPath: state.tools.ffmpeg, onProgress: function (f) {
           status("Checking " + c.name + " for camera movement\u2026 " + Math.round(f * 100) + "%" + (cams.length > 1 ? " (" + (i + 1) + "/" + cams.length + ")" : ""), "", f);
         } }).then(function (m) {
-          state.motion["v:" + c.videoTrack] = m;
+          state.motion["v:" + c.videoTrack + rangeKey()] = m;
           log("Camera movement for " + c.name + " analyzed in " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
         });
       });
@@ -739,7 +796,7 @@
 
   function cameraMotionInput() {
     var out = {};
-    state.config.cameras.forEach(function (c) { var m = state.motion["v:" + c.videoTrack]; if (c.moving && m) out[c.id] = m; });
+    state.config.cameras.forEach(function (c) { var m = state.motion["v:" + c.videoTrack + rangeKey()]; if (c.moving && m) out[c.id] = m; });
     return out;
   }
 
@@ -774,7 +831,9 @@
     var curves = {};
     state.config.speakers.forEach(function (s) { if (state.curves[curveKey(s)]) curves[s.id] = state.curves[curveKey(s)]; });
     try {
-      state.result = D.plan({ durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves, cameraMotion: cameraMotionInput() }, state.config);
+      var planInput = { durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves, cameraMotion: cameraMotionInput() };
+      var rng = currentRange();
+      state.result = rng ? D.planRange(planInput, state.config, rng.a, rng.b) : D.plan(planInput, state.config);
     } catch (e) { status(e.message, "err"); state.result = null; setButtons(); return; }
     var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
     var cams = state.config.cameras.map(function (c, i) { return { id: c.id, name: c.name, color: camColor(i) }; });
@@ -782,10 +841,10 @@
       durationSec: state.seq.durationSec, hopSec: HOP, curves: curves,
       speakers: spk.map(function (s) { return { id: s.id, name: s.name, color: colorOf(state.config.speakers.indexOf(s)) }; }),
       calibration: state.result.calibration, speech: state.result.speech, shots: state.result.shots,
-      cameras: cams, cleanup: acceptedCuts(),
+      cameras: cams, cleanup: acceptedCuts(), range: currentRange(),
       motion: Object.keys(state.result.stability || {}).map(function (id) {
         var c = cams.filter(function (x) { return x.id === id; })[0];
-        return { id: id, name: c ? c.name : id, hopSec: state.result.stability[id].hopSec, states: state.result.stability[id].states };
+        return { id: id, name: c ? c.name : id, hopSec: state.result.stability[id].hopSec, states: state.result.stability[id].states, offsetSec: state.result.stability[id].offsetSec || 0 };
       })
     });
     $("vizHint").textContent = "click = jump playhead · drag = lock a camera · wheel = zoom";
@@ -933,6 +992,7 @@
         "Edit `config` (speakers, cameras, preset, style, overrides) and import it back via Settings > Import settings.",
       exportedAt: new Date().toISOString(), engineVersion: D.VERSION,
       sequence: { name: state.seq.name, fps: state.seq.fps, durationSec: state.seq.durationSec },
+      range: currentRange() ? { startSec: currentRange().a, endSec: currentRange().b } : undefined,
       input: { durationSec: state.seq.durationSec, hopSec: HOP * down, fps: state.seq.fps, curves: curves,
         cameraMotion: (function () {
           var m = cameraMotionInput(), o = {};
@@ -1065,7 +1125,8 @@
     var tracks = spk.length ? spk.map(function (s) { return { t: s.audioTrack, ch: s.channel }; })
       : state.seq.audioTracks.filter(function (a) { return !a.muted; }).map(function (a) { return { t: a.index, ch: null }; });
     var clips = [];
-    tracks.forEach(function (x) { state.seq.audioTracks[x.t].clips.forEach(function (c) { var cc = copy(c); cc.channel = x.ch; clips.push(cc); }); });
+    if (spk.length) spk.forEach(function (sp) { speakerTrack(sp).clips.forEach(function (c) { clips.push(c); }); });
+    else tracks.forEach(function (x) { trimToRange(state.seq.audioTracks[x.t]).clips.forEach(function (c) { var cc = copy(c); cc.channel = null; clips.push(cc); }); });
     var t0 = Date.now();
     log("Transcribing " + clips.length + " clips with " + path.basename(state.tools.whisper.model));
     return W.transcribeTimeline({
@@ -1226,6 +1287,10 @@
   $("btnExportPlan").onclick = exportForClaude;
   $("btnSavePreset").onclick = savePreset;
   $("setupSelect").onchange = function () { chooseSetup(this.value); };
+  $("rangeSelect").onchange = function () {
+    state.config.range = this.value; saveConfig(); state.result = null; replan();
+    status(curvesReady() ? "Range changed." : "Range changed \u2014 click Analyze waveforms.", "", 0);
+  };
   $("btnSaveSetup").onclick = saveSetup;
   $("btnDeleteSetup").onclick = deleteSetup;
   $("btnDeleteSetup").innerHTML = TRASH_SVG;

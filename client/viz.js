@@ -35,6 +35,7 @@
   Viz.prototype.tOf = function (x) { return this.view.start + (x / this.width()) * this.view.span; };
   Viz.prototype.xAt = function (t) { return (t - this.view.start) / this.view.span * this.width(); };
   Viz.prototype.setData = function (d) {
+    if (!d) { this.data = null; this.render(); return; }
     var first = !this.data || this.data.durationSec !== d.durationSec;
     this.data = d;
     if (first) this.fit();
@@ -141,7 +142,9 @@
       ctx.fillStyle = "#1c1c1c"; ctx.fillRect(0, y, W, ML - 2);
       var n = m.states.length;
       for (var px = 0; px < W; px++) {
-        var ia = Math.max(0, Math.floor(self.tOf(px) / m.hopSec)), ib = Math.min(n, Math.max(ia + 1, Math.ceil(self.tOf(px + 1) / m.hopSec)));
+        var off = m.offsetSec || 0;
+        var ia = Math.max(0, Math.floor((self.tOf(px) - off) / m.hopSec)), ib = Math.min(n, Math.max(ia + 1, Math.ceil((self.tOf(px + 1) - off) / m.hopSec)));
+        if (self.tOf(px + 1) < off) continue;
         var worst = -1;
         for (var q = ia; q < ib; q++) if (m.states[q] > worst) worst = m.states[q];
         if (worst < 0) continue;
@@ -176,6 +179,15 @@
       ctx.fillStyle = "rgba(239,93,93,.18)"; ctx.fillRect(xa, RULER, xb - xa, H - RULER - 8);
       ctx.fillStyle = "rgba(239,93,93,.9)"; ctx.fillRect(xa, H - 8, Math.max(1, xb - xa), 6);
     });
+    // outside the In/Out range: untouched by PodDirector
+    if (d.range) {
+      ctx.fillStyle = "rgba(10,10,10,.62)";
+      var ra = this.xAt(d.range.a), rb = this.xAt(d.range.b);
+      if (ra > 0) ctx.fillRect(0, RULER, Math.min(W, ra), H - RULER);
+      if (rb < W) ctx.fillRect(Math.max(0, rb), RULER, W - Math.max(0, rb), H - RULER);
+      ctx.fillStyle = "#e6b450";
+      [ra, rb].forEach(function (x) { if (x >= 0 && x <= W) ctx.fillRect(Math.round(x), 0, 2, H); });
+    }
     // selection
     var selPx = null;
     if (this.drag) selPx = [Math.min(this.drag.x0, this.drag.x1), Math.max(this.drag.x0, this.drag.x1)];

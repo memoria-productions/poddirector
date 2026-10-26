@@ -102,7 +102,8 @@
     return Promise.all(clips.map(function (c) {
       if (c.channel === null || c.channel === undefined) return Promise.resolve({ stream: 0, chan: null, mono: false });
       return A.audioLayout(c.mediaPath).then(function (layout) {
-        var loc = A.locateChannel(layout, c.channel) || { stream: 0, chan: 0 };
+        var loc = A.locateChannel(layout, c.channel);
+        if (!loc) return { stream: 0, chan: null, mono: false }; // channel not in this file: use its full mix
         return { stream: loc.stream, chan: loc.chan, mono: layout[loc.stream] === 1 };
       });
     })).then(function (locs) { return renderMixResolved(ffmpegPath, clips, locs, durationSec, outPath, onProgress); });

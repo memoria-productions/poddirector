@@ -52,12 +52,13 @@ Tips:
    - A person with two close-up cameras gets **angle rotation** between them.
    - **Follows speaker:** for a camera whose operator re-frames on whoever is talking. It counts as a close-up of every speaker, but never as a group shot or a listener reaction.
    - **Check for movement:** turn this on for a dolly, slider, gimbal, or handheld camera. PodDirector reads its picture and only cuts to it when it's steady (section 4, *Moving cameras*). Leave it off for locked-off cameras like a static wide: that skips the video analysis for them, and they're never held back.
-5. **Analyze waveforms** reads the mic audio. It also checks any moving cameras for movement, which decodes their video at low resolution: allow a few minutes per hour of footage the first time. The first run takes a little while. After that the results are cached, so changing settings is instant.
-6. **Tune the style** (section 4). The preview strip updates live.
+5. **Analyze** range: set **In and Out marks** on the sequence around the episode itself, and PodDirector analyzes and cuts only between them. The intro, outro and anything else outside the marks are left exactly as they are (the preview greys them out). Choose **Whole sequence** in the menu above the Analyze button to ignore the marks.
+6. **Analyze waveforms** reads the mic audio. It also checks any moving cameras for movement, which decodes their video at low resolution: allow a few minutes per hour of footage the first time. The first run takes a little while. After that the results are cached, so changing settings is instant.
+7. **Tune the style** (section 4). The preview strip updates live.
    - **Click** the preview to move Premiere's playhead to that moment.
    - **Drag** across a range, then pick a camera to **lock** it there. "Auto" unlocks it.
-7. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
-8. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.** To try a different style, build again.
+8. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
+9. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.** To try a different style, build again.
 
 ---
 

@@ -54,8 +54,14 @@ var PD = (function () {
     var tpf = parseFloat(seq.timebase);
     var info = {
       name: seq.name, sequenceID: seq.sequenceID, fps: TPS / tpf, ticksPerFrame: seq.timebase,
-      durationSec: sec(seq.end), audioTracks: [], videoTracks: []
+      durationSec: sec(seq.end), inSec: null, outSec: null, audioTracks: [], videoTracks: []
     };
+    // Sequence In/Out marks (unset marks come back as 0 / the end, or as large negative numbers).
+    try {
+      var inS = parseFloat(seq.getInPoint()), outS = parseFloat(seq.getOutPoint());
+      if (isFinite(inS) && inS > 0.01 && inS < info.durationSec) info.inSec = inS;
+      if (isFinite(outS) && outS > 0 && outS < info.durationSec - 0.01 && outS > (info.inSec || 0)) info.outSec = outS;
+    } catch (eIO) { /* older Premiere: whole sequence */ }
     var i, j, track, clip, clips, mp, speed;
     for (i = 0; i < seq.audioTracks.numTracks; i++) {
       track = seq.audioTracks[i];

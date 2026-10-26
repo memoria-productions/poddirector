@@ -902,6 +902,37 @@
   }
 
   /** Per video track: which ranges are enabled. Boundaries are video frame numbers. */
+  /**
+   * Plan only the part of the sequence between startSec and endSec (e.g. the In/Out marks), leaving the
+   * rest (intro, outro) alone. The engine runs on that slice as if it were the whole show, so "open on wide"
+   * and pauses behave relative to the range; shots come back in sequence time.
+   */
+  function planRange(input, config, startSec, endSec) {
+    var hop = input.hopSec, fps = input.fps || 30;
+    var a = Math.max(0, Math.round(startSec * fps) / fps), b = Math.min(input.durationSec, Math.round(endSec * fps) / fps);
+    if (!(b - a > 1)) throw new Error("The In/Out range is too short.");
+    var f0 = Math.round(a / hop), f1 = Math.round(b / hop);
+    var curves = {};
+    Object.keys(input.curves).forEach(function (k) { var c = input.curves[k]; curves[k] = c.slice ? c.slice(f0, f1) : Array.prototype.slice.call(c, f0, f1); });
+    var motion = {};
+    Object.keys(input.cameraMotion || {}).forEach(function (k) {
+      var m = input.cameraMotion[k], g0 = Math.round(a / m.hopSec), g1 = Math.round(b / m.hopSec);
+      motion[k] = { hopSec: m.hopSec, values: m.values.slice ? m.values.slice(g0, g1) : Array.prototype.slice.call(m.values, g0, g1) };
+    });
+    var cfg = merge(config, { overrides: (config.overrides || []).map(function (o) {
+      return { startSec: o.startSec - a, endSec: o.endSec - a, cameraId: o.cameraId };
+    }).filter(function (o) { return o.endSec > 0 && o.startSec < b - a; }) });
+    var r = plan({ durationSec: b - a, hopSec: hop, fps: fps, curves: curves, cameraMotion: motion }, cfg);
+    var sh = function (t) { return round3(t + a); };
+    r.shots.forEach(function (s) { s.startSec = sh(s.startSec); s.endSec = sh(s.endSec); });
+    r.shots[r.shots.length - 1].endSec = round3(b);
+    r.speech.forEach(function (sp) { sp.runs = sp.runs.map(function (x) { return [sh(x[0]), sh(x[1])]; }); });
+    r.interjections.forEach(function (ij) { ij.startSec = sh(ij.startSec); ij.endSec = sh(ij.endSec); });
+    Object.keys(r.stability || {}).forEach(function (k) { r.stability[k].offsetSec = a; });
+    r.range = { startSec: a, endSec: b };
+    return r;
+  }
+
   function toEditPayload(result, cameras, fps) {
     var camById = {};
     cameras.forEach(function (c) { camById[c.id] = c; });
@@ -911,6 +942,8 @@
       if (a > 0) cuts.push(a);
       return { startFrame: a, endFrame: b, videoTrack: camById[s.cameraId] ? camById[s.cameraId].videoTrack : -1, cameraId: s.cameraId };
     });
+    // Range plans also cut at the Out mark so whatever follows (outro) stays exactly as it was.
+    if (result.range && shots.length) cuts.push(shots[shots.length - 1].endFrame);
     return {
       cameraTracks: cameras.map(function (c) { return c.videoTrack; }),
       cutFrames: cuts,
@@ -919,13 +952,14 @@
   }
 
   return {
-    VERSION: "0.3.2",
+    VERSION: "0.3.3",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
     styleFromPreset: styleFromPreset,
     presetForSubjects: presetForSubjects,
     plan: plan,
+    planRange: planRange,
     toEditPayload: toEditPayload,
     _internal: { smoothRuns: smoothRuns, calibrate: calibrate, percentile: percentile, shotAt: shotAt }
   };

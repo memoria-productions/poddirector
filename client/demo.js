@@ -5,10 +5,12 @@
     // VOX tracks are the channels of one multichannel recorder file, like a camera with an XLR adapter.
     function at(i, name) {
       var media = /^VOX/.test(name) ? "/demo/recorder-4ch.wav" : "/demo/" + name + ".wav";
-      return { index: i, name: name, muted: false, clips: [{ name: name + ".wav", startSec: 0, endSec: DUR, inPointSec: 0, mediaPath: media, speed: 1 }] };
+      var clips = [{ name: name + ".wav", startSec: 0, endSec: DUR - 20, inPointSec: 0, mediaPath: media, speed: 1 }];
+      if (/^VOX/.test(name)) clips.push({ name: "outro_" + name + ".wav", startSec: DUR - 20, endSec: DUR, inPointSec: 0, mediaPath: "/demo/outro-" + name + ".wav", speed: 1 });
+      return { index: i, name: name, muted: false, clips: clips };
     }
     return {
-      name: "Demo Episode 42", sequenceID: "demo", fps: 29.97, ticksPerFrame: "8475667200", durationSec: DUR,
+      name: "Demo Episode 42", sequenceID: "demo", fps: 29.97, ticksPerFrame: "8475667200", durationSec: DUR, inSec: 8, outSec: DUR - 22,
       audioTracks: [at(0, "VOX1"), at(1, "VOX2"), at(2, "VOX3"), at(3, "SFX"), at(4, "Music")],
       videoTracks: [
         { index: 0, name: "Wide", clipCount: 1, firstClip: "CAM_WIDE.mp4", endSec: DUR, mediaPaths: ["/demo/wide.mp4"] },
@@ -53,7 +55,7 @@
     });
     var out = {};
     config.speakers.forEach(function (sp) {
-      var k = sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel);
+      var k = sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel) + (sp.channelManual ? "m" : "a");
       var c = new Float32Array(frames);
       for (var f = 0; f < frames; f++) {
         var p = Math.pow(10, (-60 + (r() - 0.5) * 5) / 10);
