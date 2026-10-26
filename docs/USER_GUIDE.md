@@ -33,7 +33,7 @@ Tips:
 
 - **Sync first.** Use Premiere's *Synchronize* by audio, or a sync plugin, before you run PodDirector.
 - **Camera scratch audio is skipped automatically.** Audio that comes from the same files as your camera clips isn't treated as a speaker mic.
-- **All the mics in one file?** If a recorder (Zoom, Rodecaster, etc.) put every mic in one multichannel file, add that track once per speaker and set each speaker's **channel** (Ch 1, Ch 2…).
+- **All the mics in one file?** A recorder (Zoom, Rodecaster) or a camera with an XLR adapter often puts every mic in one multichannel file, which Premiere spreads across tracks (A1 = Ch 1, A2 = Ch 2…). PodDirector detects this and gives each speaker its own channel; you can check it in the channel menu next to each speaker. If it ever reads **All ch** for such a file, every speaker hears the same mix and the cut barely changes. PodDirector now warns about that after analysis.
 
 ---
 
@@ -170,6 +170,7 @@ Updates can come from two places:
 |---|---|
 | The panel isn't under Window → Extensions | Run the installer again with Premiere closed. |
 | "ffmpeg was not found" | Check Settings. The bundled copy should appear there. If antivirus quarantined it, restore it or set a custom path. |
+| Very few cuts; the camera barely switches | Check each speaker's channel menu: speakers sharing one multichannel file must each use their own channel, not **All ch**. |
 | The camera follows the wrong person | Open ⚙ on that speaker and look at the level bar. If the white threshold line sits inside the bleed, set the threshold manually above it, or lower **Bleed rejection**. |
 | Too many quick cuts | Raise **Reaction delay** and **Minimum shot**, or switch to **Calm**. |
 | Reactions feel random | Lower **Reaction frequency**, or turn off **Reacts on screen** for the chatty listener. |

@@ -29,7 +29,7 @@
   var RATE = 8000;
   var DEFAULT_HOP = 0.025;
   var SILENT_DB = -120;
-  var CACHE_VERSION = 2;
+  var CACHE_VERSION = 3;
 
   var state = { ffmpeg: null, customPath: null, extensionRoot: null, tried: [] };
 
@@ -126,6 +126,56 @@
 
   // -------------------------------------------------------------- decoding
 
+  // ------------------------------------------------------- audio layout
+
+  var LAYOUTS = { mono: 1, stereo: 2, "2.1": 3, "3.0": 3, "3.0(back)": 3, "4.0": 4, quad: 4, "quad(side)": 4, "3.1": 4,
+    "5.0": 5, "5.0(side)": 5, "4.1": 5, "5.1": 6, "5.1(side)": 6, "6.0": 6, "6.0(front)": 6, hexagonal: 6, "6.1": 7,
+    "6.1(back)": 7, "6.1(front)": 7, "7.0": 7, "7.0(front)": 7, "7.1": 8, "7.1(wide)": 8, "7.1(wide-side)": 8, octagonal: 8,
+    downmix: 2, "22.2": 24 };
+  var layoutCache = {};
+
+  /** Parse "ffmpeg -i" output: channel count of each audio stream, in order. */
+  function parseLayout(text) {
+    var streams = [];
+    String(text).split(/\r?\n/).forEach(function (line) {
+      if (!/Stream #\d+:\d+.*: Audio:/.test(line)) return;
+      var m = /(\d+) channels/.exec(line), n = 0;
+      if (m) n = +m[1];
+      else {
+        var parts = line.split(/,\s*/);
+        for (var i = 0; i < parts.length && !n; i++) {
+          var name = parts[i].trim().split(/\s/)[0];
+          if (LAYOUTS[name]) n = LAYOUTS[name];
+          else if (/^\d+\.\d+/.test(name)) { var xy = name.match(/^(\d+)\.(\d+)/); n = +xy[1] + +xy[2]; }
+        }
+      }
+      streams.push(n || 2);
+    });
+    return streams;
+  }
+
+  /** Channel count per audio stream of a media file, e.g. [4] or [2, 2]. Cached. */
+  function audioLayout(mediaPath) {
+    if (layoutCache[mediaPath]) return Promise.resolve(layoutCache[mediaPath]);
+    return new Promise(function (resolve) {
+      var p = cp.spawn(state.ffmpeg || "ffmpeg", ["-hide_banner", "-i", mediaPath], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      var err = "";
+      p.stderr.on("data", function (d) { err += d; });
+      p.on("error", function () { resolve([2]); });
+      p.on("close", function () { var l = parseLayout(err); layoutCache[mediaPath] = l.length ? l : [2]; resolve(layoutCache[mediaPath]); });
+    });
+  }
+
+  /** Global channel number (0-based, counting across all audio streams) -> { stream, chan }. */
+  function locateChannel(layout, channel) {
+    var c = channel;
+    for (var s = 0; s < layout.length; s++) {
+      if (c < layout[s]) return { stream: s, chan: c };
+      c -= layout[s];
+    }
+    return null; // beyond the last channel
+  }
+
   /**
    * Loudness of one source range. Returns Float32Array of dB values, one per hop.
    * channel: null = mix all channels, n = use only channel n (0-based).
@@ -141,13 +191,21 @@
     var total = Math.ceil(durSec / hop);
     var out = new Float32Array(total).fill(SILENT_DB);
 
-    var filters = [];
-    if (channel !== null && channel !== undefined) filters.push("pan=mono|c0=c" + channel);
+    var wantChannel = channel !== null && channel !== undefined;
+    return (wantChannel ? audioLayout(mediaPath) : Promise.resolve(null)).then(function (layout) {
+    var filters = [], map = ["-map", "0:a:0?"];
+    if (wantChannel) {
+      var loc = locateChannel(layout, channel);
+      if (!loc) return Promise.reject(new Error(path.basename(mediaPath) + " has only " + layout.reduce(function (a, b) { return a + b; }, 0) +
+        " audio channel(s); channel " + (channel + 1) + " doesn't exist."));
+      map = ["-map", "0:a:" + loc.stream];
+      if (layout[loc.stream] > 1) filters.push("pan=mono|c0=c" + loc.chan);
+    }
     filters.push("highpass=f=90", "lowpass=f=5000"); // voice band: ignores rumble, HVAC, hiss
     var args = ["-hide_banner", "-nostats", "-loglevel", "error",
-      "-ss", String(Math.max(0, inSec)), "-t", String(durSec), "-i", mediaPath,
+      "-ss", String(Math.max(0, inSec)), "-t", String(durSec), "-i", mediaPath].concat(map, [
       "-vn", "-sn", "-dn", "-af", filters.join(","), "-ac", "1", "-ar", String(RATE),
-      "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"];
+      "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"]);
 
     return new Promise(function (resolve, reject) {
       var p = cp.spawn(state.ffmpeg, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -179,6 +237,7 @@
         cachePut(key, out);
         resolve(out);
       });
+    });
     });
   }
 
@@ -229,7 +288,7 @@
 
   return {
     RATE: RATE, DEFAULT_HOP: DEFAULT_HOP,
-    findFfmpeg: findFfmpeg, analyzeRange: analyzeRange, analyzeTrack: analyzeTrack,
+    findFfmpeg: findFfmpeg, analyzeRange: analyzeRange, audioLayout: audioLayout, locateChannel: locateChannel, parseLayout: parseLayout, analyzeTrack: analyzeTrack,
     pool: pool, clearCache: clearCache,
     ffmpegPath: function () { return state.ffmpeg; }
   };

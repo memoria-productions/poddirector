@@ -18,7 +18,9 @@ jobs:
       - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg zip
       - run: npm test
 
+  # The full Windows build only runs for version tags (and manual runs): pushes to main just run the tests.
   package:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20

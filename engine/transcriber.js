@@ -89,18 +89,36 @@
    * Render the given timeline audio clips into one mono 16 kHz WAV.
    * clips: [{ mediaPath, startSec, endSec, inPointSec, channel? }]
    */
+  function analyzerModule() {
+    if (typeof window !== "undefined" && window.PodAnalyzer) return window.PodAnalyzer;
+    return req(path.join(__dirname, "analyzer.js"));
+  }
+
   function renderMix(ffmpegPath, clips, durationSec, outPath, onProgress) {
+    clips = clips.filter(function (c) { return c.mediaPath && c.endSec > c.startSec; });
+    if (!clips.length) return Promise.reject(new Error("No audio clips to transcribe."));
+    // Resolve "channel N" to (audio stream, channel within it) for files with several streams/channels.
+    var A = analyzerModule();
+    return Promise.all(clips.map(function (c) {
+      if (c.channel === null || c.channel === undefined) return Promise.resolve({ stream: 0, chan: null, mono: false });
+      return A.audioLayout(c.mediaPath).then(function (layout) {
+        var loc = A.locateChannel(layout, c.channel) || { stream: 0, chan: 0 };
+        return { stream: loc.stream, chan: loc.chan, mono: layout[loc.stream] === 1 };
+      });
+    })).then(function (locs) { return renderMixResolved(ffmpegPath, clips, locs, durationSec, outPath, onProgress); });
+  }
+
+  function renderMixResolved(ffmpegPath, clips, locs, durationSec, outPath, onProgress) {
     return new Promise(function (resolve, reject) {
-      clips = clips.filter(function (c) { return c.mediaPath && c.endSec > c.startSec; });
-      if (!clips.length) return reject(new Error("No audio clips to transcribe."));
       var args = ["-hide_banner", "-nostats", "-loglevel", "error", "-y", "-progress", "pipe:1"];
       // Silent base so the mix always spans the whole sequence.
       args.push("-f", "lavfi", "-t", String(durationSec), "-i", "anullsrc=r=16000:cl=mono");
       var chains = [], labels = ["[0:a]"];
       clips.forEach(function (c, i) {
         args.push("-ss", String(Math.max(0, c.inPointSec || 0)), "-t", String(c.endSec - c.startSec), "-i", c.mediaPath);
-        var f = "[" + (i + 1) + ":a:0]";
-        var chain = f + (c.channel !== null && c.channel !== undefined ? "pan=mono|c0=c" + c.channel + "," : "") +
+        var loc = locs[i];
+        var f = "[" + (i + 1) + ":a:" + loc.stream + "]";
+        var chain = f + (loc.chan !== null && !loc.mono ? "pan=mono|c0=c" + loc.chan + "," : "") +
           "aresample=16000,aformat=channel_layouts=mono,adelay=" + Math.round(c.startSec * 1000) + ":all=1[a" + i + "]";
         chains.push(chain);
         labels.push("[a" + i + "]");

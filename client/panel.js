@@ -157,6 +157,12 @@
         state.tx = { segments: null, suggestions: [], off: {}, nudges: {} };
         loadCachedTranscript();
       }
+      var fixedN = fixChannels(state.config, info);
+      if (fixedN) {
+        saveConfig();
+        setNote(($("setupNote").textContent ? $("setupNote").textContent + " " : "") + "Your mics share one multichannel file, so each speaker now reads its own channel (" +
+          state.config.speakers.map(function (sp) { return sp.name + " = Ch " + (sp.channel + 1); }).join(", ") + ").");
+      }
       renderAll();
       status("Sequence ready. Check speakers and cameras, then Analyze waveforms.", "ok", 0);
     });
@@ -182,6 +188,36 @@
     return mics.length ? mics : audio.filter(function (a) { return !NON_VOICE.test(a.name); });
   }
 
+  /**
+   * Multichannel sources (a recorder or camera file carrying several mics): Premiere lays the channels of one
+   * file onto consecutive audio tracks (A1 = Ch 1, A2 = Ch 2, ...). Find that group for a track and return its
+   * channel number, or null when the track's media isn't shared with other tracks.
+   */
+  function autoChannel(info, trackIndex) {
+    var track = info.audioTracks[trackIndex];
+    if (!track || !track.clips.length) return null;
+    var votes = {};
+    track.clips.slice(0, 6).forEach(function (c) {
+      var group = info.audioTracks.filter(function (t) {
+        return t.clips.some(function (o) { return o.mediaPath === c.mediaPath && Math.abs(o.startSec - c.startSec) < 0.02 && Math.abs(o.inPointSec - c.inPointSec) < 0.02; });
+      }).map(function (t) { return t.index; }).sort(function (a, b) { return a - b; });
+      if (group.length > 1) { var k = group.indexOf(trackIndex); votes[k] = (votes[k] || 0) + 1; }
+    });
+    var best = null, n = 0;
+    Object.keys(votes).forEach(function (k) { if (votes[k] > n) { n = votes[k]; best = +k; } });
+    return best;
+  }
+  /** Set channels for speakers left on "All ch" whose track is part of a multichannel group. Returns how many changed. */
+  function fixChannels(cfg, info) {
+    var changedN = 0;
+    cfg.speakers.forEach(function (sp) {
+      if (sp.channelManual || (sp.channel !== null && sp.channel !== undefined)) return;
+      var ch = autoChannel(info, sp.audioTrack);
+      if (ch !== null) { sp.channel = ch; changedN++; }
+    });
+    return changedN;
+  }
+
   /** subjects: optional number of people on mic (4 = "4 or more"). */
   function guessConfig(info, subjects, previous) {
     var cfg = defaultConfig();
@@ -196,6 +232,7 @@
         thresholdDb: null, biasDb: prev ? prev.biasDb || 0 : 0, minShotSec: null, interjections: true, reactionShots: true, enabled: true });
     });
     if (subjects) cfg.preset = D.presetForSubjects(cfg.speakers.length);
+    fixChannels(cfg, info);
     var vids = info.videoTracks.filter(function (v) { return v.clipCount > 0; });
     var GENERIC = { mic: 1, microphone: 1, audio: 1, lav: 1, track: 1, speaker: 1, cam: 1, camera: 1 };
     function tokens(n) { return n.toLowerCase().split(/[^a-z0-9]+/).filter(function (w) { return w && !GENERIC[w] && !/^\d+$/.test(w); }); }
@@ -224,7 +261,7 @@
   }
 
   function describeGuess(cfg, info) {
-    var names = cfg.speakers.map(function (s) { return "A" + (s.audioTrack + 1) + (info.audioTracks[s.audioTrack] ? " " + info.audioTracks[s.audioTrack].name : ""); });
+    var names = cfg.speakers.map(function (s) { return "A" + (s.audioTrack + 1) + (info.audioTracks[s.audioTrack] ? " " + info.audioTracks[s.audioTrack].name : "") + (s.channel !== null && s.channel !== undefined ? " (Ch " + (s.channel + 1) + ")" : ""); });
     var vox = info.audioTracks.some(function (a) { return VOX.test(a.name); });
     return cfg.speakers.length ? "Found " + cfg.speakers.length + " speaker mic" + (cfg.speakers.length > 1 ? "s" : "") + (vox ? " (VOX tracks)" : "") + ": " + names.join(", ") + "."
       : "No speaker mics found. Name your mic tracks VOX1, VOX2\u2026 or add speakers below.";
@@ -255,7 +292,7 @@
       preset: c.preset, style: copy(c.style || {}),
       speakers: c.speakers.map(function (sp) {
         return { name: sp.name, trackName: info.audioTracks[sp.audioTrack] ? info.audioTracks[sp.audioTrack].name : null, audioTrack: sp.audioTrack,
-          channel: sp.channel, thresholdDb: sp.thresholdDb, biasDb: sp.biasDb, minShotSec: sp.minShotSec,
+          channel: sp.channel, channelManual: !!sp.channelManual, thresholdDb: sp.thresholdDb, biasDb: sp.biasDb, minShotSec: sp.minShotSec,
           interjections: sp.interjections, reactionShots: sp.reactionShots, enabled: sp.enabled };
       }),
       cameras: c.cameras.map(function (cm) {
@@ -285,7 +322,7 @@
       var t = findTrack(info.audioTracks, s.trackName, s.audioTrack);
       if (t < 0) { missing.push(s.name + " (" + s.trackName + ")"); return; }
       var id = "S" + (i + 1); idByName[s.name] = id;
-      cfg.speakers.push({ id: id, name: s.name, audioTrack: t, channel: s.channel === undefined ? null : s.channel, thresholdDb: s.thresholdDb === undefined ? null : s.thresholdDb,
+      cfg.speakers.push({ id: id, name: s.name, audioTrack: t, channel: s.channel === undefined ? null : s.channel, channelManual: !!s.channelManual, thresholdDb: s.thresholdDb === undefined ? null : s.thresholdDb,
         biasDb: s.biasDb || 0, minShotSec: s.minShotSec === undefined ? null : s.minShotSec, interjections: s.interjections !== false,
         reactionShots: s.reactionShots !== false, enabled: s.enabled !== false });
     });
@@ -425,8 +462,12 @@
       var chans = [["mix", "All ch"], [0, "Ch 1"], [1, "Ch 2"], [2, "Ch 3"], [3, "Ch 4"], [4, "Ch 5"], [5, "Ch 6"], [6, "Ch 7"], [7, "Ch 8"]];
       var main = el("div", { class: "row-main" }, [
         name,
-        select(trackOptions("audio"), sp.audioTrack, function (v) { sp.audioTrack = +v; changed(); }),
-        select(chans, sp.channel === null ? "mix" : sp.channel, function (v) { sp.channel = v === "mix" ? null : +v; changed(); }),
+        select(trackOptions("audio"), sp.audioTrack, function (v) {
+          sp.audioTrack = +v;
+          if (!sp.channelManual && state.seq) sp.channel = autoChannel(state.seq, sp.audioTrack);
+          renderSpeakers(); changed();
+        }),
+        select(chans, sp.channel === null || sp.channel === undefined ? "mix" : sp.channel, function (v) { sp.channel = v === "mix" ? null : +v; sp.channelManual = true; changed(); }),
         el("button", { class: "icon", title: "More settings", text: sp._open ? "▾" : "⚙", onclick: function () { sp._open = !sp._open; renderSpeakers(); } }),
         trashButton("Remove this speaker", function () {
           confirmBox(row, "Remove speaker \u201C" + sp.name + "\u201D? Their mic will be ignored.", "Remove", function () {
@@ -673,8 +714,9 @@
       return analyzeMotion();
     }).then(function () {
       replan();
+      warnIdenticalMics();
       renderSpeakers(); renderCameras();
-      status("Analysis ready — tweak the style and watch the preview update.", "ok", 1);
+      if ($("statusText").className !== "err") status("Analysis ready \u2014 tweak the style and watch the preview update.", "ok", 1);
     });
   });
 
@@ -699,6 +741,28 @@
     var out = {};
     state.config.cameras.forEach(function (c) { var m = state.motion["v:" + c.videoTrack]; if (c.moving && m) out[c.id] = m; });
     return out;
+  }
+
+  /** Two "different" mics with near-identical loudness curves means they're reading the same audio. */
+  function warnIdenticalMics() {
+    var spk = state.config.speakers.filter(function (s) { return s.enabled !== false && state.curves[curveKey(s)]; });
+    var pairs = [];
+    for (var i = 0; i < spk.length; i++) for (var j = i + 1; j < spk.length; j++) {
+      var a = state.curves[curveKey(spk[i])], b = state.curves[curveKey(spk[j])];
+      if (a === b || corr(a, b) > 0.97) pairs.push(spk[i].name + " & " + spk[j].name);
+    }
+    if (pairs.length) {
+      var msg = "These speakers are reading the same audio: " + pairs.join(", ") + ". If your mics are channels of one file, set each speaker's channel (Ch 1, Ch 2\u2026).";
+      setNote(msg); log(msg);
+      status("Some speakers have identical audio \u2014 check their channels.", "err");
+    }
+    return pairs.length;
+  }
+  function corr(a, b) {
+    var n = Math.min(a.length, b.length), step = Math.max(1, Math.floor(n / 20000)), sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, k = 0;
+    for (var i = 0; i < n; i += step) { var x = a[i], y = b[i]; sa += x; sb += y; saa += x * x; sbb += y * y; sab += x * y; k++; }
+    var cov = sab / k - (sa / k) * (sb / k), va = saa / k - (sa / k) * (sa / k), vb = sbb / k - (sb / k) * (sb / k);
+    return va > 0 && vb > 0 ? cov / Math.sqrt(va * vb) : 1;
   }
 
   function curvesReady() {

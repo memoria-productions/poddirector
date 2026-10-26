@@ -2,7 +2,11 @@
 (function () {
   var DUR = 360;
   function sequence() {
-    function at(i, name) { return { index: i, name: name, muted: false, clips: [{ name: name + ".wav", startSec: 0, endSec: DUR, inPointSec: 0, mediaPath: "/demo/" + name + ".wav", speed: 1 }] }; }
+    // VOX tracks are the channels of one multichannel recorder file, like a camera with an XLR adapter.
+    function at(i, name) {
+      var media = /^VOX/.test(name) ? "/demo/recorder-4ch.wav" : "/demo/" + name + ".wav";
+      return { index: i, name: name, muted: false, clips: [{ name: name + ".wav", startSec: 0, endSec: DUR, inPointSec: 0, mediaPath: media, speed: 1 }] };
+    }
     return {
       name: "Demo Episode 42", sequenceID: "demo", fps: 29.97, ticksPerFrame: "8475667200", durationSec: DUR,
       audioTracks: [at(0, "VOX1"), at(1, "VOX2"), at(2, "VOX3"), at(3, "SFX"), at(4, "Music")],

@@ -121,3 +121,29 @@ test("identical frames never read as camera motion (incl. stripes / test pattern
     assert.ok(v === 0 || Number.isNaN(v), "got " + v);
   });
 });
+
+test("audio layout parsing and channel addressing across streams", () => {
+  const out = [
+    "  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p, 3840x2160, 23.98 fps",
+    "  Stream #0:1[0x2](und): Audio: pcm_s16be (twos / 0x736F7774), 48000 Hz, 4 channels, s16, 3072 kb/s",
+    "  Stream #1:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 48000 Hz, 4.0, s32 (24 bit), 4608 kb/s",
+    "  Stream #0:2[0x3](und): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 317 kb/s",
+    "  Stream #0:3: Audio: aac, 48000 Hz, 5.1(side), fltp"
+  ].join("\n");
+  assert.deepEqual(A.parseLayout(out), [4, 4, 2, 6]);
+  assert.deepEqual(A.locateChannel([2, 2], 0), { stream: 0, chan: 0 });
+  assert.deepEqual(A.locateChannel([2, 2], 3), { stream: 1, chan: 1 });
+  assert.equal(A.locateChannel([4], 4), null);
+});
+
+test("each channel of a multichannel file is analyzed separately", { skip: !hasFfmpeg }, async () => {
+  const f = path.join(dir, "four.wav");
+  cp.spawnSync("ffmpeg", ["-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", "sine=f=200:d=2,volume=1", "-f", "lavfi", "-i", "sine=f=300:d=2,volume=0.1",
+    "-f", "lavfi", "-i", "sine=f=400:d=2,volume=0.01", "-f", "lavfi", "-i", "sine=f=500:d=2,volume=0.001",
+    "-filter_complex", "[0][1][2][3]amerge=inputs=4[a]", "-map", "[a]", "-c:a", "pcm_s16le", f]);
+  await A.findFfmpeg();
+  const lv = [];
+  for (const ch of [0, 1, 2, 3]) lv.push((await A.analyzeRange(f, 0, 1.5, ch))[20]);
+  for (let i = 1; i < 4; i++) assert.ok(lv[i - 1] - lv[i] > 15, "channel " + i + " should be ~20 dB quieter: " + lv.map((x) => x.toFixed(1)));
+});
