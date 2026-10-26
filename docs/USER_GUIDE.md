@@ -58,7 +58,8 @@ Tips:
    - **Click** the preview to move Premiere's playhead to that moment.
    - **Drag** across a range, then pick a camera to **lock** it there. "Auto" unlocks it.
 8. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
-9. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.** To try a different style, build again.
+9. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.**
+10. **Recut** to try a different style or fix a few shots. Adjust the preview, then click **Recut "… - PodDirector"**. This changes the same copy in place instead of making a new one, so if you've already nested that copy into your master timeline, the nest picks up the new cut automatically. Old edit points stay behind as invisible through-edits. **Undo recut** puts the previous version back (the last 5 are kept). Recut overwrites any cameras you switched by hand in that copy, so lock those shots in the preview first (drag across them and pick a camera).
 
 ---
 
@@ -145,7 +146,8 @@ Under the preview you'll see the number of cuts, cuts per minute, average and lo
    - **Restart / retake:** "let me start over", "take two", "from the top", "let me rephrase".
    - **False starts:** a sentence that's begun, abandoned, and restarted with the same words. No spoken cue is needed for these.
    - **Off the record:** from "off the record" until "we're back" or the next long pause.
-   - **Interruptions / technical chatter:** "hold on", "is the camera still recording?" These are flagged with lower confidence.
+   - **Interruptions:** phones and alarms ("let me silence my phone", "sorry, that's my alarm", Whisper's own *[phone ringing]* tags), someone at the door, "I have to take this". The suggestion runs from the ring through the "okay, sorry about that", and stops where the conversation picks back up.
+   - **Technical chatter:** "hold on", "is the camera still recording?" These are flagged with lower confidence.
 3. Each suggestion shows its time range, confidence, and transcript text. **Click** a suggestion to jump Premiere's playhead there. Use the arrow buttons to nudge the start or end by 0.5 s, and untick any you want to keep.
 4. **Mark selected on timeline** adds red range markers. Review them in context, then lift or ripple-delete the ones you agree with. PodDirector never deletes anything for you.
 5. **Copy for Claude review** copies the flagged list plus the full transcript, ready to paste into Claude for a second opinion.

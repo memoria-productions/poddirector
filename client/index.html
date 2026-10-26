@@ -99,6 +99,11 @@
       <button id="btnMarkers" class="btn" disabled>Preview as markers</button>
       <button id="btnApply" class="btn primary" disabled>Build cut on a copy</button>
     </div>
+    <div id="recutRow" class="actions two hidden">
+      <button id="btnRecut" class="btn" disabled title="Apply the current preview to the copy you already built, keeping it in place (and in your master timeline)">Recut last copy</button>
+      <button id="btnUndoRecut" class="btn ghost" disabled title="Put the previous cut back on that copy">Undo recut</button>
+    </div>
+    <div id="recutNote" class="muted small"></div>
     <div class="actions two">
       <button id="btnClearMarkers" class="btn ghost small">Clear PodDirector markers</button>
       <button id="btnExportPlan" class="btn ghost small" disabled>Export analysis for Claude</button>

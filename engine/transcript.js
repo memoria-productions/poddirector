@@ -84,8 +84,12 @@
         segs[k].endSec = segs[k + 1] ? segs[k + 1].startSec : segs[k].startSec + estimateDuration(segs[k].text);
       }
     }
+    segs.forEach(function (sg) { if (isSound(sg.text)) sg.sound = true; });
     return segs.sort(function (a, b) { return a.startSec - b.startSec; });
   }
+
+  /** Whisper and caption files mark non-speech sounds as [phone ringing], (laughs), *buzzing*. */
+  function isSound(text) { return /^\s*[\[(*][^\])*]{1,60}[\])*]\s*$/.test(text || ""); }
 
   function estimateDuration(text) { return Math.max(1, text.split(/\s+/).length / 2.7); }
 
@@ -98,7 +102,8 @@
       var words = (s.words || []).map(function (w) {
         return { startSec: num(w.start, w.startSec), endSec: num(w.end, w.endSec), text: String(w.word || w.text || "").trim() };
       });
-      return { startSec: start, endSec: end, speaker: s.speaker || null, text: String(s.text || "").trim(), words: words.length ? words : undefined };
+      var text = String(s.text || "").trim();
+      return { startSec: start, endSec: end, speaker: s.speaker || null, text: text, words: words.length ? words : undefined, sound: isSound(text) || undefined };
     }).filter(function (s) { return isFinite(s.startSec) && s.text; });
   }
   function parseTs(t) { var m = TC.exec(t || ""); return m ? tcToSec(m) : NaN; }
@@ -129,6 +134,12 @@
     { re: /\b(pick ?up|pickup) (from|at) \b/, type: "restart", weight: 0.6, scope: "before" },
     // Off the record
     { re: /\boff the record\b|\bbetween (us|you and me)\b|\bdon't (record|air) this\b|\bthis is(n't| not) (for|going on) (the )?(record|air|show|episode)\b/, type: "off-record", weight: 0.85, scope: "after" },
+    // Interruptions: phones, alarms, someone at the door (whole interruption gets cut, not just the words)
+    { re: /\b(silence|silencing|mute|muting|turn(ing)? off|switch(ing)? off|shut(ting)? off|turn(ing)? down|put(ting)?|stop(ping)?|decline|declining|ignore|ignoring|get(ting)? rid of)\b[^.?!]{0,24}\b(phone|cell ?phone|cell|ringer|alarm|timer|watch|notifications?|ringtone)\b/, type: "interruption", weight: 0.85, scope: "interruption" },
+    { re: /\b(phone|cell ?phone|cell|alarm|timer|watch|ringtone)\b[^.?!]{0,20}\b(ring|rings|ringing|rang|going off|goes off|went off|buzz|buzzes|buzzing|beep|beeps|beeping|vibrat\w*|blowing up|on silent|on mute|on do not disturb|on airplane mode)\b/, type: "interruption", weight: 0.8, scope: "interruption" },
+    { re: /\b(that'?s|that is|it'?s|sorry,? (that'?s|my|about (my|the)))\s*(my|his|her|your|the|someone'?s)?\s*(phone|alarm|timer|cell)\b/, type: "interruption", weight: 0.75, scope: "interruption" },
+    { re: /\b(phone|ringing|ringtone|buzzing|beeping|alarm|knock(ing)?|doorbell|notification)\b/, type: "interruption", weight: 0.7, scope: "interruption", soundOnly: true },
+    { re: /\b(someone'?s|somebody'?s) at the door\b|\bi (have|need) to (take|get) this\b|\b(let me|i'?ll|lemme) (just )?(get|grab|take) (that|this)\b/, type: "interruption", weight: 0.65, scope: "interruption" },
     // Weak signals: technical interruptions
     { re: /\b(hold on|hang on|wait wait|one sec(ond)?|give me a (sec|second|minute))\b/, type: "interruption", weight: 0.45, scope: "around" },
     { re: /\b(where was i|lost my (train of thought|place)|what was i saying)\b/, type: "interruption", weight: 0.55, scope: "before" },
@@ -171,12 +182,14 @@
       var norm = normalize(sg.text);
       for (var c = 0; c < CUES.length; c++) {
         var cue = CUES[c];
+        if (cue.soundOnly && !sg.sound) continue;
         var m = cue.re.exec(norm);
         if (!m) continue;
         var cueTime = cueTimeInSegment(sg, m.index, norm.length);
         var sug;
         if (cue.scope === "after") sug = offRecordRange(segs, i, cueTime, o);
         else if (cue.scope === "around") sug = aroundRange(segs, i, o);
+        else if (cue.scope === "interruption") sug = interruptionRange(segs, i, o);
         else sug = beforeRange(segs, i, cueTime, o);
         sug.type = cue.type;
         sug.trigger = m[0];
@@ -254,6 +267,26 @@
     return { startSec: start, endSec: end, review: "end" };
   }
 
+  /**
+   * An interruption (phone, alarm, door): from where the conversation broke off (the last real pause, at most
+   * ~10 s back) to where it resumes, swallowing the short "sorry / okay / where were we" lines that follow.
+   */
+  var RESUME = /^(sorry|okay|ok|alright|all right|anyway|so|where (were|was) (we|i)|go ahead|carry on|continue|we'?re (good|back)|done|got it|there we go|that'?s better|yeah|um|uh)\b/;
+  function interruptionRange(segs, i, o) {
+    var sg = segs[i], start = sg.startSec, j = i;
+    while (j > 0 && sg.startSec - segs[j - 1].startSec <= 10 && segs[j].startSec - segs[j - 1].endSec < o.pauseSec &&
+           (segs[j - 1].sound || words(segs[j - 1].text).length <= 6)) { j--; start = segs[j].startSec; }
+    var end = sg.endSec;
+    for (var k = i + 1; k < segs.length && segs[k].startSec - sg.endSec <= 25; k++) {
+      var t = normalize(segs[k].text);
+      var n = words(segs[k].text).length;
+      // Short "okay, sorry" lines belong to the interruption; a resumption with real content ("Anyway, the Aeneid...") doesn't.
+      if (segs[k].sound || (n <= 4 && RESUME.test(t)) || (n <= 10 && /phone|alarm|silent|ringer|sorry about that/.test(t))) end = segs[k].endSec;
+      else break;
+    }
+    return { startSec: start, endSec: end, review: "both" };
+  }
+
   function aroundRange(segs, i) {
     return { startSec: segs[i].startSec, endSec: segs[i].endSec, review: "both" };
   }
@@ -286,7 +319,7 @@
 
   var LABELS = {
     "edit-cue": "Asked to cut", restart: "Restart / retake", "off-record": "Off the record",
-    bleep: "Bleep requested", interruption: "Interruption", technical: "Technical chatter", "false-start": "False start"
+    bleep: "Bleep requested", interruption: "Interruption (phone, alarm\u2026)", technical: "Technical chatter", "false-start": "False start"
   };
   function describe(type, phrase) { return (LABELS[type] || type) + ": “" + phrase + "”"; }
 
@@ -339,5 +372,5 @@
     return (h ? h + ":" : "") + (m < 10 && h ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s.toFixed(2);
   }
 
-  return { parse: parse, analyze: analyze, assignSpeakers: assignSpeakers, toCsv: toCsv, formatTime: fmt, DEFAULTS: DEFAULTS, CUES: CUES };
+  return { isSound: isSound, parse: parse, analyze: analyze, assignSpeakers: assignSpeakers, toCsv: toCsv, formatTime: fmt, DEFAULTS: DEFAULTS, CUES: CUES };
 });

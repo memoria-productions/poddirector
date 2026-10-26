@@ -205,16 +205,21 @@
       var maxDur = 0.3 + 0.12 * w.text.trim().length;
       if (w.endSec - w.startSec > maxDur) w.endSec = w.startSec + maxDur;
       return w;
-    }).filter(function (w) { return w.text.trim() && !/^\s*\[(BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]\s*$/i.test(w.text) && !/^\s*\(.*\)\s*$/.test(w.text); });
+    }).filter(function (w) { return w.text.trim() && !/^\s*[\[(](BLANK_AUDIO|SILENCE|silence|no speech|inaudible)[\])]\s*$/i.test(w.text); });
     var segs = [], cur = null;
     words.forEach(function (w) {
       var gap = cur ? w.startSec - cur.endSec : Infinity;
-      var newSeg = !cur || gap >= 0.7 || cur.words.length >= 28 || (/[.?!]["')]?$/.test(cur.text) && gap >= 0.25);
-      if (newSeg) { cur = { startSec: w.startSec, endSec: w.endSec, speaker: null, text: "", words: [] }; segs.push(cur); }
+      // Sound tags ([phone ringing], (laughs)) get their own segment so the cleanup scan can spot them.
+      var tag = /^\s*[\[(*]/.test(w.text) || (cur && cur.tag);
+      var newSeg = !cur || gap >= 0.7 || cur.words.length >= 28 || (/[.?!]["')]?$/.test(cur.text) && gap >= 0.25) ||
+        (/^\s*[\[(*]/.test(w.text) && !/[\])*]\s*$/.test(cur.text)) || (cur.tag && /[\])*]\s*$/.test(cur.text));
+      void tag;
+      if (newSeg) { cur = { startSec: w.startSec, endSec: w.endSec, speaker: null, text: "", words: [], tag: /^\s*[\[(*]/.test(w.text) }; segs.push(cur); }
       cur.words.push({ startSec: w.startSec, endSec: w.endSec, text: w.text.trim() });
       cur.text = (cur.text + (/^\s/.test(w.text) || !cur.text ? " " : "") + w.text.trim()).trim();
       cur.endSec = w.endSec;
     });
+    segs.forEach(function (sg) { if (sg.tag) sg.sound = /^\s*[\[(*][^\])*]{1,60}[\])*]\s*$/.test(sg.text); delete sg.tag; });
     return segs;
   }
 

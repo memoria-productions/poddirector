@@ -945,37 +945,101 @@
     return callHost("clearMarkers", [MARK_CAM]).then(function (r) { status("Removed " + r.removed + " PodDirector markers.", "ok"); });
   });
 
-  var applyCut = guard(function () {
-    if (!state.result) return;
-    var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
-    var payload = D.toEditPayload(state.result, cams, state.seq.fps);
+  // Cut history per original sequence: the copy we built and the last few cuts applied to it.
+  function copies() { return load("copies", {}); }
+  function copyFor(seq) { return seq ? copies()[seq.sequenceID] || null : null; }
+  function rememberCut(orig, copySeq, payload, stats, replaceHistory) {
+    var all = copies(), rec = all[orig.sequenceID];
+    if (!rec || rec.id !== copySeq.sequenceID) rec = { id: copySeq.sequenceID, name: copySeq.name, history: [] };
+    if (replaceHistory) rec.history = [];
+    rec.history.push({ at: new Date().toISOString(), cuts: stats.cuts, payload: payload });
+    if (rec.history.length > 5) rec.history = rec.history.slice(-5);
+    all[orig.sequenceID] = rec; store("copies", all);
+  }
+
+  /** Razor the camera tracks of a sequence at the cut points and enable one camera per shot. */
+  function writeCut(seqId, payload, label) {
     var tracks = [];
     payload.cameraTracks.forEach(function (t) { if (tracks.indexOf(t) < 0) tracks.push(t); });
-    var newSeq;
-    status("Duplicating the sequence…", "", 0.02);
-    return callHost("duplicateActive", [state.seq.sequenceID, " - PodDirector"]).then(function (r) {
-      newSeq = r; log("Created " + r.name);
-      var CHUNK = 250, steps = [];
-      tracks.forEach(function (t) {
-        for (var i = 0; i < payload.cutFrames.length; i += CHUNK) steps.push({ track: t, frames: payload.cutFrames.slice(i, i + CHUNK) });
-      });
-      var n = 0, razored = 0;
-      return steps.reduce(function (p, st) {
-        return p.then(function () {
-          return callHost("razorTrack", [JSON.stringify({ sequenceID: newSeq.sequenceID, track: st.track, frames: st.frames })]).then(function (r) {
-            razored += r.razored; n++;
-            status("Cutting V" + (st.track + 1) + "… (" + Math.round(100 * n / steps.length) + "%)", "", 0.05 + 0.85 * n / steps.length);
-          });
+    var CHUNK = 250, steps = [];
+    tracks.forEach(function (t) {
+      for (var i = 0; i < payload.cutFrames.length; i += CHUNK) steps.push({ track: t, frames: payload.cutFrames.slice(i, i + CHUNK) });
+    });
+    var n = 0, razored = 0;
+    return steps.reduce(function (p, st) {
+      return p.then(function () {
+        return callHost("razorTrack", [JSON.stringify({ sequenceID: seqId, track: st.track, frames: st.frames })]).then(function (r) {
+          razored += r.razored; n++;
+          status(label + " V" + (st.track + 1) + "\u2026 (" + Math.round(100 * n / steps.length) + "%)", "", 0.05 + 0.85 * n / steps.length);
         });
-      }, Promise.resolve()).then(function () {
-        log("Razored " + razored + " edit points");
-        status("Switching cameras…", "", 0.93);
-        return callHost("applyEnables", [JSON.stringify({ sequenceID: newSeq.sequenceID, cameraTracks: tracks, shots: payload.shots })]);
       });
+    }, Promise.resolve()).then(function () {
+      log("Razored " + razored + " edit points");
+      status("Switching cameras\u2026", "", 0.93);
+      return callHost("applyEnables", [JSON.stringify({ sequenceID: seqId, cameraTracks: tracks, shots: payload.shots })]);
+    });
+  }
+
+  function currentPayload() {
+    var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
+    return D.toEditPayload(state.result, cams, state.seq.fps);
+  }
+
+  var applyCut = guard(function () {
+    if (!state.result) return;
+    var payload = currentPayload(), orig = state.seq, newSeq;
+    status("Duplicating the sequence\u2026", "", 0.02);
+    return callHost("duplicateActive", [orig.sequenceID, " - PodDirector"]).then(function (r) {
+      newSeq = r; log("Created " + r.name);
+      return writeCut(newSeq.sequenceID, payload, "Cutting");
     }).then(function (r) {
-      status("Done: “" + newSeq.name + "” has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched). Your original is untouched.", "ok", 1);
+      rememberCut(orig, newSeq, payload, state.result.stats, true);
+      renderRecut();
+      status("Done: \u201C" + newSeq.name + "\u201D has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched). Your original is untouched.", "ok", 1);
     });
   });
+
+  /**
+   * Recut: apply the current preview to the copy built earlier, in place. Old edit points stay as invisible
+   * through-edits (same camera on both sides); every clip's on/off state is set fresh from the new plan.
+   */
+  var recut = guard(function () {
+    var rec = copyFor(state.seq);
+    if (!rec || !state.result) return;
+    var payload = currentPayload(), orig = state.seq;
+    status("Opening \u201C" + rec.name + "\u201D\u2026", "", 0.02);
+    return callHost("openSequenceById", [rec.id]).then(function (r) {
+      return writeCut(rec.id, payload, "Recutting").then(function (res) {
+        rememberCut(orig, { sequenceID: rec.id, name: r.name }, payload, state.result.stats, false);
+        renderRecut();
+        status("Recut \u201C" + r.name + "\u201D: " + state.result.stats.cuts + " cuts (" + res.toggled + " clips switched). Undo recut puts the previous version back.", "ok", 1);
+      });
+    });
+  });
+
+  var undoRecut = guard(function () {
+    var all = copies(), rec = state.seq && all[state.seq.sequenceID];
+    if (!rec || rec.history.length < 2) return;
+    var prev = rec.history[rec.history.length - 2];
+    status("Opening \u201C" + rec.name + "\u201D\u2026", "", 0.02);
+    return callHost("openSequenceById", [rec.id]).then(function () {
+      return writeCut(rec.id, prev.payload, "Restoring");
+    }).then(function () {
+      rec.history.pop(); all[state.seq.sequenceID] = rec; store("copies", all);
+      renderRecut();
+      status("Restored the previous cut (" + prev.cuts + " cuts) on \u201C" + rec.name + "\u201D.", "ok", 1);
+    });
+  });
+
+  function renderRecut() {
+    var rec = copyFor(state.seq);
+    $("recutRow").classList.toggle("hidden", !rec || !inPremiere);
+    $("btnRecut").textContent = rec ? "Recut \u201C" + rec.name + "\u201D" : "Recut last copy";
+    $("btnRecut").disabled = state.busy || !rec || !state.result;
+    $("btnUndoRecut").disabled = state.busy || !rec || rec.history.length < 2;
+    $("recutNote").textContent = rec ? "Recut keeps the same copy (and any nest of it) and just changes which camera is on. " +
+      (rec.history.length > 1 ? (rec.history.length - 1) + " earlier version" + (rec.history.length > 2 ? "s" : "") + " can be restored." : "") : "";
+  }
 
   function exportForClaude() {
     if (!state.result || !hasNode) return;
@@ -1252,6 +1316,7 @@
     $("btnApply").disabled = b || !has || !inPremiere;
     $("btnClearMarkers").disabled = b || !inPremiere;
     $("btnExportPlan").disabled = b || !has || !hasNode;
+    if (typeof renderRecut === "function") renderRecut();
     var sel = state.tx.suggestions.some(function (s) { return !state.tx.off[s.id]; });
     $("btnTranscribe").disabled = b || !state.seq;
     $("btnSugMarkers").disabled = b || !sel || !inPremiere;
@@ -1285,6 +1350,8 @@
     applyCut();
   };
   $("btnExportPlan").onclick = exportForClaude;
+  $("btnRecut").onclick = recut;
+  $("btnUndoRecut").onclick = undoRecut;
   $("btnSavePreset").onclick = savePreset;
   $("setupSelect").onchange = function () { chooseSetup(this.value); };
   $("rangeSelect").onchange = function () {

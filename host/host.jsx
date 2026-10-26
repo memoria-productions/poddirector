@@ -245,7 +245,19 @@ var PD = (function () {
     return ok({ toggled: toggled });
   }
 
+  /** Open a sequence by ID (used to recut an earlier PodDirector copy). */
+  function openSequenceById(id) {
+    for (var i = 0; i < app.project.sequences.numSequences; i++) {
+      var s = app.project.sequences[i];
+      if (s.sequenceID === id) {
+        app.project.openSequence(id);
+        return ok({ sequenceID: id, name: s.name });
+      }
+    }
+    return fail("That PodDirector copy no longer exists in this project.");
+  }
+
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
-           razorTrack: razorTrack, applyEnables: applyEnables };
+           razorTrack: razorTrack, applyEnables: applyEnables, openSequenceById: openSequenceById };
 })();

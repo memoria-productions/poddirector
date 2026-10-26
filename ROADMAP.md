@@ -17,6 +17,13 @@
 - Trash icon with confirmation for speakers, cameras, and saved setups.
 - **In-panel updater:** checks GitHub releases or a shared update folder, then installs silently.
 
+## v0.3.2 – v0.4 (added)
+
+- Mics that share one multichannel file get one channel per speaker, decided per clip.
+- Analyze and cut only between the sequence In/Out marks.
+- **Recut** the existing copy in place (keeps nests) and **Undo recut** (last 5 versions).
+- Cleanup flags phone and alarm interruptions, including Whisper sound tags.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

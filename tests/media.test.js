@@ -159,3 +159,19 @@ test("a clip without the requested channel falls back to its full mix instead of
   assert.match(warnings[0], /full mix/);
   assert.ok(curve[Math.round(3 / A.DEFAULT_HOP)] > -60, "outro clip still analyzed");
 });
+
+test("phone interruptions are flagged, including Whisper sound tags, without catching normal phone talk", () => {
+  const segs = T.parse([
+    "1", "00:01:40,000 --> 00:01:44,000", "And the thing about Virgil is that the Aeneid", "",
+    "2", "00:01:44,300 --> 00:01:45,200", "[phone ringing]", "",
+    "3", "00:01:45,500 --> 00:01:48,000", "Oh, sorry, let me silence my phone.", "",
+    "4", "00:01:48,400 --> 00:01:49,500", "Okay, sorry about that.", "",
+    "5", "00:01:50,000 --> 00:01:54,000", "Anyway, the Aeneid was written for Augustus.", "",
+    "6", "00:05:00,000 --> 00:05:04,000", "He called me on the phone yesterday about the book.", ""
+  ].join("\n"));
+  assert.equal(segs[1].sound, true);
+  const r = T.analyze(segs).suggestions;
+  assert.equal(r.length, 1);
+  assert.equal(r[0].type, "interruption");
+  assert.ok(r[0].startSec <= 104.3 && r[0].endSec >= 109.5 && r[0].endSec < 110, "covers ring through 'sorry about that' only: " + r[0].startSec + "-" + r[0].endSec);
+});
