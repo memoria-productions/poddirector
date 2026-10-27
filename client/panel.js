@@ -940,6 +940,15 @@
     [[s.cuts, "cuts"], [s.cutsPerMinute, "cuts / min"], [s.avgShotSec + "s", "avg shot"], [s.longestShotSec + "s", "longest"]].forEach(function (p) {
       box.appendChild(el("div", { class: "stat" }, [el("b", { text: String(p[0]) }), el("span", { text: p[1] })]));
     });
+    // Why the cuts happen: helps decide which setting to change.
+    var WHY = { speaker: "speaker changes", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
+      hold: "holds", crosstalk: "talking over", cutaway: "monologue cutaways", "camera-move": "dolly moving", framing: "dolly on someone else",
+      opening: "opening", "jump-cover": "cleanup cover", removed: "removed sections", locked: "your locks" };
+    var reasons = Object.keys(s.reasons || {}).sort(function (a, b) { return s.reasons[b] - s.reasons[a]; });
+    if (reasons.length) {
+      box.appendChild(el("div", { class: "why small" }, [el("span", { class: "muted", text: "Shots by reason: " }),
+        el("span", { text: reasons.map(function (r) { return (WHY[r] || r) + " " + s.reasons[r]; }).join(" \u00B7 ") })]));
+    }
     var bars = el("div", { class: "bars" });
     state.config.cameras.forEach(function (c, i) {
       var pct = s.screenTimePct[c.id] || 0;

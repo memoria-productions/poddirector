@@ -28,6 +28,8 @@
 
 - **Who's in the shot** for operated cameras: steady stretches grouped by appearance and named from the audio, editable thumbnails, so the follow cam is used only when it's on the person talking (and can be a reaction shot when it's on a listener).
 - Cut away from any camera movement by default (slow moves on air is now opt-in).
+- **Max cuts / min** cap (drops the least important cuts first) and a "Shots by reason" breakdown under the preview.
+- **Minimum wide**: wide shots run at least 5 s by default.
 
 ## Next candidates
 

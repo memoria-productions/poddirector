@@ -16,7 +16,7 @@ function motion(duration, moves) {
 }
 
 const talk = () => makeCurves([["A", 1, 12], ["B", 12.4, 25], ["A", 25.5, 40]], { durationSec: 42 });
-const base = { openOnWideSec: 0, interjectionMode: "ignore", maxShotSec: 0, wideAfterSilenceSec: 0 };
+const base = { openOnWideSec: 0, interjectionMode: "ignore", maxShotSec: 0, wideAfterSilenceSec: 0, minWideSec: 0 };
 
 test("follow cam: cuts to wide while the operator re-frames, back once settled", () => {
   const input = talk();
@@ -90,4 +90,14 @@ test("unreadable stretches: treated as moving on a readable camera, ignored on a
   const r2 = D.plan(plain, { speakers, cameras, style: Object.assign({}, base, { slowMovesOnAir: false }) });
   assert.equal(at(r2, 19.5).cameraId, "F");
   assert.equal(r2.stability.F.lowDetail, true);
+});
+
+test("a wide forced by a dolly move stays up for the minimum wide length", () => {
+  const input = talk();
+  input.cameraMotion = { F: motion(42, [[12.2, 13.6, 15]]) };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const r = D.plan(input, { speakers, cameras, style: Object.assign({}, base, { minWideSec: 5 }) });
+  const w = at(r, 12.8);
+  assert.equal(w.cameraId, "W");
+  assert.ok(w.endSec - w.startSec >= 4.99, "wide lasts " + (w.endSec - w.startSec));
 });

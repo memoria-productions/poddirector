@@ -130,3 +130,4 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .framing { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); display: grid; gap: 5px; }
 .framing-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
 canvas.thumb { width: 72px; height: 40px; border-radius: 3px; image-rendering: auto; background: #111; }
+.why { grid-column: 1 / -1; line-height: 1.5; }

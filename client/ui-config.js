@@ -7,12 +7,16 @@ window.PD_UI = {
       { key: "cutTimingSec", label: "Cut timing", min: -0.6, max: 0.6, step: 0.02, unit: "s",
         help: "Where the cut lands relative to the first word. Negative = cut just before they speak (anticipate), positive = a beat after (react)." },
       { key: "minShotSec", label: "Minimum shot", min: 0.5, max: 8, step: 0.1, unit: "s",
-        help: "Shots shorter than this get absorbed into a neighbour." }
+        help: "Shots shorter than this get absorbed into a neighbour. Reaction shots use their own length, and cuts forced by a moving camera ignore it: use Max cuts / min for an overall limit." },
+      { key: "maxCutsPerMin", label: "Max cuts / min", min: 0, max: 20, step: 1, unit: "", zero: "no limit",
+        help: "Hard limit on cuts in any minute. When a stretch is busier, the least important cuts are dropped first: reactions, then pause wides, cutaways, overlaps, then the shortest speaker shots. Cuts forced by camera movement stay." }
     ]},
     { title: "Wide & group shots", open: true, controls: [
       { key: "crosstalkMode", label: "Talking over", type: "select",
         options: [["wide", "Go to the group/wide shot"], ["loudest", "Stay on the loudest"], ["hold", "Hold the current shot"]],
         help: "What to show when two or more people talk at once." },
+      { key: "minWideSec", label: "Minimum wide", min: 0, max: 15, step: 0.5, unit: "s", zero: "same as minimum shot",
+        help: "Every wide shot stays up at least this long, running on into the next shot if needed, so wides forced by a moving camera, overlaps or pauses don't flash by." },
       { key: "crosstalkMinSec", label: "Overlap time", min: 0.2, max: 4, step: 0.1, unit: "s",
         help: "Overlap must last this long to count as crosstalk." },
       { key: "wideAfterSilenceSec", label: "Wide on pauses", min: 0, max: 10, step: 0.5, unit: "s", zero: "off",

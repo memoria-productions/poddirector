@@ -79,7 +79,11 @@ Start with a preset, then adjust from there. Controls you've changed from the pr
 
 - **Reaction delay:** how long a new voice has to keep talking before the camera follows. Raise it if the edit feels jumpy. Lower it if the camera is late to the new speaker.
 - **Cut timing:** where the cut lands relative to the first word. Slightly negative (−0.1 s) cuts just before they speak, which feels natural. Positive values cut a beat after, like a live switcher reacting.
-- **Minimum shot:** shots shorter than this get absorbed into a neighbor.
+- **Minimum shot:** shots shorter than this get absorbed into a neighbor. Reaction shots use their own length, and cuts forced by a moving camera (a dolly reframe) ignore it.
+- **Max cuts / min:** a hard limit on how many cuts can happen in any minute. When a stretch is busier than that, PodDirector drops the least important cuts first: reactions, then pause wides, cutaways, overlaps, then the shortest speaker shots. Cuts forced by camera movement stay. **This is the setting to use when the edit feels too busy.**
+- **Minimum wide** (Wide & group shots): every wide shot stays up at least this long (default 5 s), running on into the next shot when needed. Wides forced by a moving dolly, short overlaps and pauses no longer flash by; it never runs over a locked shot or a reaction shot. Set it to 0 to use the normal minimum shot.
+
+  Under the preview, **Shots by reason** shows what's causing the cuts. Lots of "reactions" means lower **Reaction frequency**, set **Interjections** to *Ignore*, or *lower* **Interjection length** (a longer setting turns more remarks into reaction shots). Lots of "dolly moving" means the operator reframes often; that's not a setting problem.
 
 ### Wide and group shots
 

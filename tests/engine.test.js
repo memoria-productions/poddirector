@@ -103,7 +103,7 @@ test("manual locks override the automatic choice", () => {
 test("speakers with two close-up angles rotate between them", () => {
   const cams = cameras.concat([{ id: "cA2", name: "Host side", videoTrack: 3, shows: ["A"] }]);
   const input = makeCurves([["A", 1, 8], ["B", 8.4, 16], ["A", 16.4, 24], ["B", 24.4, 32], ["A", 32.4, 40]], { durationSec: 41 });
-  const r = D.plan(input, { speakers, cameras: cams, style: { openOnWideSec: 0, interjectionMode: "ignore", maxShotSec: 0 } });
+  const r = D.plan(input, { speakers, cameras: cams, style: { openOnWideSec: 0, interjectionMode: "ignore", maxShotSec: 0, minWideSec: 0 } });
   const hostAngles = [at(r, 4), at(r, 20), at(r, 36)].map((s) => s.cameraId);
   assert.deepEqual(hostAngles, ["cA", "cA2", "cA"]);
 });
@@ -174,4 +174,32 @@ test("a removed section never joins the same camera to itself (no jump cut)", ()
   assert.equal(at(off, 25.05).cameraId, "cA");
   const ranged = D.planRange(input, { speakers, cameras, style, removals: [{ startSec: 20, endSec: 25 }] }, 5, 55);
   assert.notEqual(at(ranged, 25.05).cameraId, at(ranged, 19.9).cameraId, "works with In/Out ranges too");
+});
+
+test("max cuts per minute caps a busy edit, dropping reactions and pauses first", () => {
+  const lines = [];
+  for (let t = 1; t < 170; t += 6) lines.push([t % 12 < 6 ? "A" : "B", t, t + 5.2]);
+  for (let t = 10; t < 170; t += 9) lines.push([t % 18 < 9 ? "B" : "A", t + 2, t + 2.7]);
+  const input = makeCurves(lines, { durationSec: 172 });
+  const style = { openOnWideSec: 0, interjectionMode: "reaction", interjectionChance: 1, minShotSec: 1 };
+  const free = D.plan(input, { speakers, cameras, style });
+  const capped = D.plan(input, { speakers, cameras, style: Object.assign({ maxCutsPerMin: 4 }, style) });
+  assert.ok(free.stats.cutsPerMinute > 6, "busy without a cap: " + free.stats.cutsPerMinute);
+  const starts = capped.shots.slice(1).map((s) => s.startSec);
+  for (const t of starts) assert.ok(starts.filter((x) => x > t - 60 && x <= t).length <= 4, "no 60 s window over 4 cuts");
+  assert.ok((capped.stats.reasons.reaction || 0) <= (free.stats.reasons.reaction || 0));
+});
+
+test("wide shots last at least the minimum wide length", () => {
+  // Quick back-and-forth with short overlaps and pauses: lots of brief wides without the rule.
+  const lines = [];
+  for (let t = 1; t < 170; t += 7) { lines.push(["A", t, t + 4]); lines.push(["B", t + 3, t + 6.2]); }
+  const input = makeCurves(lines, { durationSec: 172 });
+  const style = { openOnWideSec: 0, interjectionMode: "ignore", minShotSec: 1, crosstalkMinSec: 0.5, wideAfterSilenceSec: 0 };
+  const wideId = cameras.reduce((w, c) => (!w || c.shows.length > w.shows.length ? c : w), null).id;
+  const shortWides = (r) => r.shots.filter((s, i) => s.cameraId === wideId && i < r.shots.length - 1 && s.endSec - s.startSec < 4.9).length;
+  const off = D.plan(input, { speakers, cameras, style: Object.assign({ minWideSec: 0 }, style) });
+  const on = D.plan(input, { speakers, cameras, style: Object.assign({ minWideSec: 5 }, style) });
+  assert.ok(shortWides(off) > 0, "fixture has short wides");
+  assert.strictEqual(shortWides(on), 0, "no wide under 5 s");
 });

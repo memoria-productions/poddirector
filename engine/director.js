@@ -44,9 +44,11 @@
     reactionDelaySec: 0.4,     // a new speaker must hold the floor this long before we switch
     cutTimingSec: -0.12,       // where the cut lands vs speech onset: negative = before (anticipate)
     minShotSec: 2.0,           // shortest shot allowed (absorbed into neighbours otherwise)
+    maxCutsPerMin: 0,          // hard cap on cuts in any 60 s window (0 = no cap); drops the least important cuts first
     // Group / wide behaviour
     crosstalkMode: "wide",     // "wide" | "loudest" | "hold"
     crosstalkMinSec: 1.0,      // overlap must last this long before it counts as crosstalk
+    minWideSec: 5.0,           // a wide shot stays up at least this long, running into the next shot if needed (0 = use minimum shot)
     wideAfterSilenceSec: 3.0,  // go wide after this much silence (0 = never)
     openOnWideSec: 3.0,        // open the show on the wide for this long (0 = off)
     // Interjections ("yeah", laughs, quick questions)
@@ -824,12 +826,51 @@
     return mergeShots(out);
   }
 
+  // --------------------------------------------------- 9c. wide length
+
+  /** Short wides (forced by a moving camera, quick overlaps, pauses) look like flashes: let each run on to minWideSec. */
+  function applyMinWide(shots, style, ctx) {
+    var fr = ctx.fr, ci = ctx.ci;
+    var need = Math.round((style.minWideSec || 0) * fr);
+    if (!ci.hasWide || need <= 0 || need <= Math.round(style.minShotSec * fr)) return shots;
+    var wide = ci.widest;
+    var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    shots = mergeShots(shots);
+    for (var i = 0; i < shots.length; i++) {
+      var s = shots[i];
+      if (s.cameraId !== wide || s.locked || s.end - s.start >= need) continue;
+      // Run forward into the following shots (never over a locked shot).
+      var want = s.start + need;
+      for (var j = i + 1; j < shots.length && s.end < want; j++) {
+        var n = shots[j];
+        if (n.locked || n.reason === "reaction" || !canShow(wide, n.start, Math.min(n.end, want))) break;
+        if (n.cameraId === wide || n.end <= want || n.end - want < Math.round(style.minShotSec * fr) * 0.5) {
+          s.end = n.end; n.end = n.start; // swallowed whole (or the leftover would be a flash)
+        } else { n.start = want; s.end = want; }
+      }
+      // Still short (locked shot or end of show ahead): reach back instead.
+      if (s.end - s.start < need) {
+        var wantStart = s.end - need;
+        for (var k = i - 1; k >= 0 && s.start > wantStart; k--) {
+          var p = shots[k];
+          if (p.locked || p.reason === "reaction" || p.end !== s.start || !canShow(wide, Math.max(p.start, wantStart), p.end)) break;
+          if (p.start >= wantStart || wantStart - p.start < Math.round(style.minShotSec * fr) * 0.5) { s.start = p.start; p.start = p.end; }
+          else { p.end = wantStart; s.start = wantStart; }
+        }
+      }
+      s.keepShort = false;
+      shots = shots.filter(function (x) { return x.end > x.start; });
+      i = shots.indexOf(s);
+    }
+    return mergeShots(shots);
+  }
+
   // ------------------------------------------------------- 10. cleanup
 
   function enforceMinShot(shots, speakers, style, ctx) {
     var fr = ctx.fr;
     function minFor(s) {
-      if (s.keepShort) return Math.round(Math.min(style.minShotSec, style.reactionShotSec) * fr * 0.8);
+      if (s.keepShort) return Math.round(Math.min(style.minShotSec, style.reactionShotSec) * fr);
       var si = s.speakers && s.speakers.length === 1 ? s.speakers[0] : -1;
       var sp = si >= 0 ? speakers[si] : null;
       var v = sp && sp.minShotSec !== null && sp.minShotSec !== undefined && sp.minShotSec !== "" ? Number(sp.minShotSec) : style.minShotSec;
@@ -905,6 +946,52 @@
     return shots;
   }
 
+  // ------------------------------------------------------ 10c. cut cap
+
+  // Which shots can be dropped when there are too many cuts, least important first.
+  var DROP_ORDER = { reaction: 0, "interjection-wide": 0, pause: 1, hold: 1, cutaway: 2, crosstalk: 3, opening: 4, speaker: 5 };
+
+  /** Keep every 60 s window at or under maxCutsPerMin cuts by folding the least important shots into a neighbour. */
+  function applyCutCap(shots, style, ctx) {
+    var cap = style.maxCutsPerMin;
+    if (!(cap > 0)) return shots;
+    var win = Math.round(60 * ctx.fr), guard = shots.length * 3 + 20;
+    var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    var blocked = {};
+    while (guard-- > 0) {
+      // Busiest 60 s window (cuts = shot starts after the first).
+      var starts = shots.slice(1).map(function (s) { return s.start; });
+      var worst = -1, worstCount = 0;
+      for (var i = 0, j = 0; i < starts.length; i++) {
+        while (starts[j] < starts[i] - win) j++;
+        if (i - j + 1 > worstCount) { worstCount = i - j + 1; worst = i; }
+      }
+      if (worstCount <= cap) break;
+      var hiT = starts[worst], loT = hiT - win;
+      // Least important droppable shot in that window (shortest wins ties).
+      var pick = -1, best = Infinity;
+      for (var k = 1; k < shots.length - 1; k++) {
+        var s = shots[k];
+        if (s.end < loT || s.start > hiT || s.locked || blocked[k + ":" + s.start]) continue;
+        var rank = DROP_ORDER[s.reason];
+        if (rank === undefined) continue; // forced shots: camera moving, wrong framing, removed sections
+        var score = rank * 1e6 + (s.end - s.start);
+        if (score < best) { best = score; pick = k; }
+      }
+      if (pick < 0) break;
+      var sh = shots[pick], before = shots[pick - 1], after = shots[pick + 1];
+      var ok = function (t) {
+        return t && !t.locked && canShow(t.cameraId, sh.start, sh.end) && framingOk(ctx, t.cameraId, sh.start, sh.end, t.speakers || []);
+      };
+      var target = ok(before) && ok(after) ? ((before.end - before.start) >= (after.end - after.start) ? before : after) : (ok(before) ? before : (ok(after) ? after : null));
+      if (!target) { blocked[pick + ":" + sh.start] = true; continue; }
+      sh.cameraId = target.cameraId; sh.reason = target.reason; sh.speakers = (target.speakers || []).slice(); sh.keepShort = false;
+      shots = mergeShots(shots);
+      blocked = {};
+    }
+    return shots;
+  }
+
   function applyOverrides(shots, overrides, ctx) {
     (overrides || []).forEach(function (o) {
       var a = Math.round(Math.min(o.startSec, o.endSec) * ctx.fr);
@@ -956,7 +1043,10 @@
     ctx.stable = stabilityHelpers(ctx.stability, style, ctx);
     shots = applyStability(shots, style, ctx);
     shots = applyFraming(shots, style, ctx);
+    shots = applyMinWide(shots, style, ctx);
     shots = enforceMinShot(shots, speakers, style, ctx);
+    shots = applyMinWide(shots, style, ctx);
+    shots = applyCutCap(shots, style, ctx);
     shots = applyRemovals(shots, config.removals, style, ctx);
     shots = applyOverrides(shots, config.overrides, ctx);
     shots = mergeShots(shots);
@@ -1073,7 +1163,7 @@
   }
 
   return {
-    VERSION: "0.5.1",
+    VERSION: "0.5.3",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
