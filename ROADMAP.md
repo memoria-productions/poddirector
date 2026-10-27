@@ -30,6 +30,7 @@
 - Cut away from any camera movement by default (slow moves on air is now opt-in).
 - **Max cuts / min** cap (drops the least important cuts first) and a "Shots by reason" breakdown under the preview.
 - **Minimum wide**: wide shots run at least 5 s by default.
+- Cleanup follows an abandoned tangent from the cut cue to "okay, we're back", and flags pre-show and post-show chatter (v0.5.4).
 
 ## Next candidates
 

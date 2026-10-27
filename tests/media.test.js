@@ -175,3 +175,17 @@ test("phone interruptions are flagged, including Whisper sound tags, without cat
   assert.equal(r[0].type, "interruption");
   assert.ok(r[0].startSec <= 104.3 && r[0].endSec >= 109.5 && r[0].endSec < 110, "covers ring through 'sorry about that' only: " + r[0].startSec + "-" + r[0].endSec);
 });
+
+test("Classical et cetera #244: the abandoned Narnia tangent is cut from where it starts to 'okay, we're back'", () => {
+  const segs = T.parse(fs.readFileSync(path.join(__dirname, "fixtures", "ce244.txt"), "utf8"), { fps: 24 });
+  const r = T.analyze(segs);
+  const narnia = r.suggestions.find((s) => s.startSec < 20 * 60 + 5 && s.endSec > 20 * 60 + 5);
+  assert.ok(narnia, "the tangent is flagged");
+  assert.ok(narnia.startSec >= 19 * 60 + 15 && narnia.startSec <= 19 * 60 + 35, "starts near 19:25: " + narnia.startSec);
+  assert.ok(narnia.endSec >= 21 * 60 + 23 && narnia.endSec <= 21 * 60 + 32, "ends near 21:28: " + narnia.endSec);
+  assert.ok(!r.suggestions.some((s) => s.startSec < 11 * 60 + 15 && s.endSec > 10 * 60 + 45), "'can't put that in the title' is not a cue");
+  const pre = r.suggestions.find((s) => s.type === "pre-show");
+  assert.ok(pre && pre.endSec > 9 * 60 && pre.endSec < 9 * 60 + 20, "pre-show runs to 'Hello and welcome'");
+  const end = r.suggestions.find((s) => s.startSec > 62 * 60);
+  assert.ok(end && end.startSec > 62 * 60 + 25 && end.endSec >= 62 * 60 + 45, "'So David, cut.' after the sign-off");
+});

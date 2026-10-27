@@ -123,7 +123,11 @@
     { re: /\b(we('ll| will| can| should| gotta|'re gonna| are going to)|you can|can (we|you)|please|gonna|going to)\s+(cut|edit|trim|chop)\b/, type: "edit-cue", weight: 0.85, scope: "before" },
     { re: /\b(fix|clean|sort|deal with) (it|that|this) (up )?in post\b|\bin post\b/, type: "edit-cue", weight: 0.75, scope: "before" },
     { re: /\b(scratch|strike|disregard|ignore) (that|this|all that)\b/, type: "edit-cue", weight: 0.9, scope: "before" },
-    { re: /\b(don't|do not|can't|cannot) (use|include|air|publish|put) (that|this|it)\b/, type: "edit-cue", weight: 0.9, scope: "before" },
+    { re: /\b(don't|do not|can't|cannot) (use|include|air|publish) (that|this|it)\b/, type: "edit-cue", weight: 0.9, scope: "before" },
+    { re: /\b(don't|do not|can't|cannot) put (that|this|it) (on (the )?air|in (the )?(show|episode|podcast|edit))\b/, type: "edit-cue", weight: 0.9, scope: "before" },
+    // A bare "cut." addressed to the editor ("So David, cut."), checked on the raw text so punctuation counts.
+    { raw: /(?:^|[.!?]\s+)(?:(?:so|and|okay|ok|alright|all right)\s*,?\s*)?(?:[A-Z][a-z]+,\s*)?cut(?:\s+(?:it|there|here))?\s*[.!]?\s*$/i, type: "edit-cue", weight: 0.8, scope: "before" },
+    { raw: /(?:^|[.!?]\s+)(?:(?:so|and|okay|ok|alright|all right)\s*,?\s*)?(?:[A-Z][a-z]+,\s*)?cut(?:\s+(?:it|there|here))?\s*[.!]/i, type: "edit-cue", weight: 0.75, scope: "before" },
     { re: /\b(bleep|beep) (that|this|it)( out)?\b/, type: "bleep", weight: 0.8, scope: "before" },
     { re: /\bthat('s| is| was) (not|n't) going in\b|\bnot for (the )?(episode|show|podcast|air|broadcast)\b/, type: "edit-cue", weight: 0.85, scope: "before" },
     // Restarts / retakes
@@ -139,6 +143,7 @@
     { re: /\b(phone|cell ?phone|cell|alarm|timer|watch|ringtone)\b[^.?!]{0,20}\b(ring|rings|ringing|rang|going off|goes off|went off|buzz|buzzes|buzzing|beep|beeps|beeping|vibrat\w*|blowing up|on silent|on mute|on do not disturb|on airplane mode)\b/, type: "interruption", weight: 0.8, scope: "interruption" },
     { re: /\b(that'?s|that is|it'?s|sorry,? (that'?s|my|about (my|the)))\s*(my|his|her|your|the|someone'?s)?\s*(phone|alarm|timer|cell)\b/, type: "interruption", weight: 0.75, scope: "interruption" },
     { re: /\b(phone|ringing|ringtone|buzzing|beeping|alarm|knock(ing)?|doorbell|notification)\b/, type: "interruption", weight: 0.7, scope: "interruption", soundOnly: true },
+    { re: /\b(put(ting)? (it|this|that|my phone|the phone|mine) (in|on) |turn(ing)? on )?(airplane mode|do not disturb)\b/, type: "interruption", weight: 0.7, scope: "interruption" },
     { re: /\b(someone'?s|somebody'?s) at the door\b|\bi (have|need) to (take|get) this\b|\b(let me|i'?ll|lemme) (just )?(get|grab|take) (that|this)\b/, type: "interruption", weight: 0.65, scope: "interruption" },
     // Weak signals: technical interruptions
     { re: /\b(hold on|hang on|wait wait|one sec(ond)?|give me a (sec|second|minute))\b/, type: "interruption", weight: 0.45, scope: "around" },
@@ -164,7 +169,9 @@
     falseStartWords: 3,     // matching opening words needed to call a restart
     falseStartWindowSec: 25,
     minConfidence: 0.4,
-    offRecordMaxSec: 600
+    offRecordMaxSec: 600,
+    backChainSec: 45,       // after a cut cue, "okay, we're back" must come within this of the last cut/back phrase
+    backMaxSec: 240         // and within this of the first cue
   };
 
   /**
@@ -183,12 +190,13 @@
       for (var c = 0; c < CUES.length; c++) {
         var cue = CUES[c];
         if (cue.soundOnly && !sg.sound) continue;
-        var m = cue.re.exec(norm);
+        var m = cue.raw ? cue.raw.exec(sg.text) : cue.re.exec(norm);
         if (!m) continue;
-        var cueTime = cueTimeInSegment(sg, m.index, norm.length);
+        var cueTime = cue.raw ? cueTimeInSegment(sg, Math.round(m.index / Math.max(1, sg.text.length) * norm.length), norm.length)
+          : cueTimeInSegment(sg, m.index, norm.length);
         var sug;
         if (cue.scope === "after") sug = offRecordRange(segs, i, cueTime, o);
-        else if (cue.scope === "around") sug = aroundRange(segs, i, o);
+        else if (cue.scope === "around") sug = aroundRange(segs, i, cueTime);
         else if (cue.scope === "interruption") sug = interruptionRange(segs, i, o);
         else sug = beforeRange(segs, i, cueTime, o);
         sug.type = cue.type;
@@ -199,13 +207,22 @@
         // "cut" said mid-story ("they cut the budget") is filtered by the regexes; questions lower confidence.
         if (/\?\s*$/.test(sg.text) && cue.type === "edit-cue") sug.confidence -= 0.1;
         sug.speaker = sg.speaker || null;
-        sug.reason = describe(cue.type, m[0]);
+        sug.reason = describe(cue.type, m[0].replace(/^[.!?\s]+/, "").trim());
+        // "Let's cut this part" often starts a tangent they abandon: run on to where they say they're back.
+        if (cue.type === "edit-cue") {
+          var back = returnPoint(segs, i, cueTime.start, o);
+          if (back && back.endSec > sug.endSec) {
+            sug.endSec = back.endSec; sug.review = "both"; sug.confidence += 0.03;
+            sug.reason += " \u2026 back at: \u201c" + back.trigger + "\u201d";
+          }
+        }
         out.push(sug);
         break; // one cue per segment is enough
       }
     });
 
     falseStarts(segs, o).forEach(function (s) { out.push(s); });
+    showEdges(segs, o).forEach(function (s) { out.push(s); });
 
     var merged = mergeSuggestions(out.filter(function (s) { return s.confidence >= o.minConfidence; }));
     merged.forEach(function (s, idx) {
@@ -232,26 +249,34 @@
     return { start: t, end: sg.endSec };
   }
 
-  /** The mistake comes before the cue: reach back to the last real pause. */
+  /**
+   * The mistake comes before the cue: reach back sentence by sentence to the last real pause, a change of
+   * speaker, or the show's opening/sign-off line. Usually that's a sentence or two (about 8 s); when the cue
+   * calls out a whole stretch ("cut this part, it's going everywhere") it may reach back maxLookbackSec.
+   */
+  var TANGENT = /\b(this|that|the) (whole )?(part|section|stretch|conversation|discussion|tangent|segment)\b|\bgoing (everywhere|all over)\b|\btangent\b|\brabbit (trail|hole)\b|\boff (topic|track)\b/;
   function beforeRange(segs, i, cueTime, o) {
-    var sg = segs[i];
-    var start = sg.startSec;
-    // If the cue opens its segment, the mistake is in the previous segment(s).
-    var cueAtStart = cueTime.start - sg.startSec < 0.6;
-    var j = i;
-    if (cueAtStart && i > 0) { j = i - 1; start = segs[j].startSec; }
-    while (j > 0) {
-      var gap = segs[j].startSec - segs[j - 1].endSec;
-      if (gap >= o.pauseSec) break;
-      if (cueTime.start - segs[j - 1].startSec > o.maxLookbackSec) break;
-      // Stop at a speaker change: the other person's line is usually fine.
-      if (segs[j - 1].speaker && sg.speaker && segs[j - 1].speaker !== sg.speaker) break;
-      j--; start = segs[j].startSec;
-      if (cueTime.start - start >= o.minLookbackSec * 4) break; // usually one or two sentences
+    var list = [];
+    for (var k = 0; k <= i; k++) sentences(segs[k]).forEach(function (st) { list.push({ st: st, seg: segs[k] }); });
+    var c = list.length - 1;
+    while (c > 0 && list[c].st.startSec > cueTime.start + 0.01) c--;
+    var cueSt = list[c].st, sg = segs[i];
+    var near = cueSt.norm + " " + ((list[c + 1] && list[c + 1].st.norm) || "") + " " + (sentenceStream(segs, i, cueSt.endSec)[0] || { norm: "" }).norm;
+    var limit = TANGENT.test(near) ? o.maxLookbackSec : o.minLookbackSec * 4;
+    var cueAtStart = cueTime.start - cueSt.startSec < 0.6;
+    var start = cueSt.startSec, taken = 0;
+    for (var j = c - 1; j >= 0; j--) {
+      var prev = list[j], next = list[j + 1];
+      if (next.st.startSec - prev.st.endSec >= o.pauseSec) break;
+      if (prev.seg.speaker && sg.speaker && prev.seg.speaker !== sg.speaker && prev.seg.speaker !== "Unknown") break;
+      if (INTRO.test(prev.st.norm) || OUTRO.test(prev.st.norm)) break;
+      if (cueTime.start - prev.st.startSec > limit && !(cueAtStart && taken === 0)) break;
+      start = prev.st.startSec; taken++;
     }
-    if (cueTime.start - start < o.minLookbackSec) start = Math.max(0, cueTime.start - o.minLookbackSec);
-    // End at the cue sentence end, or (with words) right after the cue phrase.
-    var end = Math.max(cueTime.end, sg.endSec);
+    if (cueTime.start - start < o.minLookbackSec && taken === 0 && c > 0 &&
+        !INTRO.test(list[c - 1].st.norm) && !OUTRO.test(list[c - 1].st.norm)) start = Math.max(list[c - 1].st.startSec, cueTime.start - o.minLookbackSec);
+    var end = Math.max(cueTime.end, cueSt.endSec);
+    if (sg.words || sg.endSec - sg.startSec <= 8) end = Math.max(end, sg.endSec);
     return { startSec: start, endSec: end, review: "start" };
   }
 
@@ -287,8 +312,106 @@
     return { startSec: start, endSec: end, review: "both" };
   }
 
-  function aroundRange(segs, i) {
-    return { startSec: segs[i].startSec, endSec: segs[i].endSec, review: "both" };
+  /** Just the sentence the cue is in (long transcript blocks hold many sentences and often several speakers). */
+  function aroundRange(segs, i, cueTime) {
+    var sg = segs[i];
+    if (sg.endSec - sg.startSec <= 8 || !cueTime) return { startSec: sg.startSec, endSec: sg.endSec, review: "both" };
+    var hit = null;
+    sentences(sg).forEach(function (st) { if (!hit && st.endSec > cueTime.start + 0.01) hit = st; });
+    hit = hit || { startSec: sg.startSec, endSec: sg.endSec };
+    return { startSec: hit.startSec, endSec: hit.endSec, review: "both" };
+  }
+
+  // -------------------------------------------------- sentence timing
+
+  /**
+   * Sentences of a segment with estimated times. Uses word timestamps when present, otherwise spreads the
+   * segment's time over its words (Premiere's transcript export gives one timecode per ~20 s block).
+   */
+  function sentences(sg) {
+    if (sg._sentences) return sg._sentences;
+    var parts = String(sg.text).match(/[^.!?]+[.!?]*/g) || [sg.text];
+    var total = 0;
+    parts.forEach(function (p) { total += words(p).length; });
+    total = total || 1;
+    var dur = sg.endSec - sg.startSec, acc = 0, out = [];
+    var W = sg.words && sg.words.length ? sg.words : null;
+    parts.forEach(function (p) {
+      var n = words(p).length;
+      if (!n) return;
+      var a, b;
+      if (W) {
+        a = W[Math.min(W.length - 1, Math.round(acc * W.length / total))].startSec;
+        b = W[Math.min(W.length - 1, Math.round((acc + n) * W.length / total) - 1)].endSec;
+      } else { a = sg.startSec + dur * acc / total; b = sg.startSec + dur * (acc + n) / total; }
+      acc += n;
+      out.push({ text: p.trim(), norm: normalize(p), n: n, startSec: a, endSec: Math.max(a, b) });
+    });
+    Object.defineProperty ? Object.defineProperty(sg, "_sentences", { value: out, enumerable: false, configurable: true }) : (sg._sentences = out);
+    return out;
+  }
+  function sentenceStream(segs, from, fromSec) {
+    var list = [];
+    for (var i = from; i < segs.length; i++) sentences(segs[i]).forEach(function (st) { if (st.startSec >= fromSec - 0.01) list.push(st); });
+    return list;
+  }
+
+  // "Okay, bring it back", "get us back on track", "okay, we're back": the tangent is over.
+  var BACK = /\b(bring(ing)? (it|us|this) back|back on track|get(ting)? (us|it|this) back|let'?s go back( now)?$|let'?s get back|ok(ay)? we'?re back|we'?re back( now)?$|where were we|back to (the|our) (topic|question|list|show|episode|conversation)|let'?s (move|keep) (on|going) (from|past) (that|this))\b/;
+  var OFF_RECORD = /\boff the record\b|\bdon't (record|air) this\b/;
+  var CUT_AGAIN = /\b(cut|edit|strike|delete|remove|chop|trim)\s+(it|that|this)\b|\bnot (going )?in the (show|episode)\b/;
+
+  /**
+   * After a cut cue, look ahead for where they come back. Each cut/back phrase must come within backChainSec of
+   * the last one; the cut ends after the last "we're back" sentence and any one- to three-word lines right after it.
+   */
+  function returnPoint(segs, i, fromSec, o) {
+    var list = sentenceStream(segs, i, fromSec), last = fromSec, found = null;
+    for (var k = 0; k < list.length; k++) {
+      var st = list[k];
+      if (st.startSec - last > o.backChainSec || st.startSec - fromSec > o.backMaxSec) break;
+      if (OFF_RECORD.test(st.norm)) break; // a separate off-the-record stretch has its own "we're back"
+
+      if (BACK.test(st.norm)) { found = { endSec: st.endSec, trigger: st.text.replace(/[.!?]+$/, ""), k: k }; last = st.startSec; }
+      else if (CUT_AGAIN.test(st.norm)) last = st.startSec;
+    }
+    if (!found) return null;
+    for (var j = found.k + 1; j < list.length && list[j].n <= 3 && list[j].startSec - found.endSec < 2; j++) found.endSec = list[j].endSec;
+    return found;
+  }
+
+  // ----------------------------------------------- pre- and post-show
+
+  var INTRO = /\b((hello|hi|hey|good (morning|afternoon|evening))( everyone| everybody| all)?( and)? )?welcome (back )?to (another|the|this|our|today'?s|episode|part)\b/;
+  var OUTRO = /\b(thank(s| you)( all| everyone| everybody| so much)? for (joining|listening|watching)|(we'?ll|we will) (see|be back|talk to)( with)?( you| y'?all)? (next time|next week|soon)|see you next (time|week)|until next time)\b/;
+
+  /** Chatter before the opening line and after the sign-off. */
+  function showEdges(segs, o) {
+    var res = [];
+    if (!segs.length) return res;
+    var endT = segs[segs.length - 1].endSec, all = sentenceStream(segs, 0, 0);
+    for (var k = 0; k < all.length && all[k].startSec < endT * 0.3; k++) {
+      if (all[k].startSec > 30 && INTRO.test(all[k].norm)) {
+        res.push({ startSec: segs[0].startSec, endSec: all[k].startSec - o.padSec * 2, type: "pre-show", confidence: 0.7, review: "end",
+          trigger: all[k].text, reason: "Before the show opens: \u201c" + all[k].text.slice(0, 40) + "\u201d" });
+        break;
+      }
+    }
+    for (k = all.length - 1; k >= 0 && all[k].startSec > endT * 0.7; k--) {
+      if (!OUTRO.test(all[k].norm)) continue;
+      // The run of talk after the sign-off, up to the next real gap in the recording.
+      var tail = [], prevEnd = all[k].endSec;
+      for (var j = k + 1; j < all.length; j++) {
+        if (all[j].startSec - prevEnd > 3) break;
+        tail.push(all[j]); prevEnd = all[j].endSec;
+      }
+      var n = 0; tail.forEach(function (t) { n += t.n; });
+      if (!tail.length || tail.some(function (t) { return OUTRO.test(t.norm); }) || n > 60 || prevEnd - all[k].endSec > 40) continue;
+      res.push({ startSec: all[k].endSec, endSec: prevEnd, type: "post-show", confidence: 0.65, review: "start",
+        trigger: all[k].text, reason: "After the sign-off: \u201c" + all[k].text.slice(0, 40) + "\u201d" });
+      break;
+    }
+    return res;
   }
 
   /** "So the thing about — so the thing about budgets is..." -> cut the first attempt. */
@@ -319,7 +442,8 @@
 
   var LABELS = {
     "edit-cue": "Asked to cut", restart: "Restart / retake", "off-record": "Off the record",
-    bleep: "Bleep requested", interruption: "Interruption (phone, alarm\u2026)", technical: "Technical chatter", "false-start": "False start"
+    bleep: "Bleep requested", interruption: "Interruption (phone, alarm\u2026)", technical: "Technical chatter", "false-start": "False start",
+    "pre-show": "Pre-show chatter", "post-show": "Post-show chatter"
   };
   function describe(type, phrase) { return (LABELS[type] || type) + ": “" + phrase + "”"; }
 

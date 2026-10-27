@@ -156,7 +156,9 @@ Under the preview you'll see the number of cuts, cuts per minute, average and lo
 
 1. Click **Transcribe timeline**. PodDirector mixes the speaker mics and transcribes them offline with the bundled Whisper model. On a typical laptop that takes a few minutes per hour of audio. You can also **load** a transcript exported from Premiere's Text panel (SRT, VTT, or TXT).
 2. PodDirector flags:
-   - **Asked to cut:** "cut that", "edit that out", "scratch that", "don't use that", "we'll fix it in post", and similar phrases.
+   - **Asked to cut:** "cut that", "edit that out", "scratch that", "don't use that", "we'll fix it in post", a bare "David, cut.", and similar phrases.
+   - **Abandoned tangents:** when the cue calls out a whole stretch ("maybe we'll cut this part, it's going everywhere"), the cut reaches back up to *Look back up to* (40 s by default), and runs forward to where they say they're back: "bring it back", "let's get back on track", "okay, we're back". Each of those phrases must come within 45 s of the last one. Check the start point: where a tangent began is a judgment call.
+   - **Pre-show and post-show chatter:** everything before "Hello and welcome to…", and short talk after the sign-off ("thanks for joining us… we'll see you next time").
    - **Restart / retake:** "let me start over", "take two", "from the top", "let me rephrase".
    - **False starts:** a sentence that's begun, abandoned, and restarted with the same words. No spoken cue is needed for these.
    - **Off the record:** from "off the record" until "we're back" or the next long pause.
