@@ -84,8 +84,10 @@
     $("ver").textContent = "v" + D.VERSION;
     if (hasNode) {
       state.extRoot = (inPremiere && cs.getExtensionPath()) || path.resolve(__dirname || ".", "..");
-      var docs = (inPremiere && cs.getUserDocuments()) || path.join(os.homedir(), "Documents");
-      state.docsDir = path.join(docs, "PodDirector");
+      var docs = inPremiere && cs.getUserDocuments();
+      // Only trust a real, existing absolute folder; otherwise use the usual Documents folder.
+      try { if (!docs || !path.isAbsolute(docs) || !fs.statSync(docs).isDirectory()) docs = null; } catch (e) { docs = null; }
+      state.docsDir = path.join(docs || path.join(os.homedir(), "Documents"), "PodDirector");
       try { fs.mkdirSync(path.join(state.docsDir, "presets"), { recursive: true }); } catch (e) { /* ignore */ }
       $("docsDir").textContent = state.docsDir;
     }
@@ -1113,7 +1115,12 @@
   }
 
   function exportForClaude() {
+    try { exportForClaudeInner(); }
+    catch (e) { status("Export failed: " + e.message, "err"); }
+  }
+  function exportForClaudeInner() {
     if (!state.result || !hasNode) return;
+    fs.mkdirSync(state.docsDir, { recursive: true });
     var down = 4; // 25 ms -> 100 ms
     var curves = {};
     state.config.speakers.forEach(function (s) {
@@ -1491,7 +1498,17 @@
     $("updateBanner").classList.add("hidden");
   };
 
+  // Keep the page content clear of the pinned header (its height changes with the update banner / panel width).
+  function fitHeader() {
+    var h = document.querySelector(".sticky-head");
+    if (h) $("headSpacer").style.height = (h.offsetHeight + 10) + "px";
+  }
+  window.addEventListener("resize", fitHeader);
+  if (window.ResizeObserver) new ResizeObserver(fitHeader).observe(document.querySelector(".sticky-head"));
+  setInterval(fitHeader, 1000);
+
   init();
+  fitHeader();
   // Quietly look for updates at most twice a day.
   if (hasNode && Date.now() - (load("updateCheckedAt", 0) || 0) > 12 * 3600 * 1000) setTimeout(function () { checkUpdates(true).catch(function () {}); }, 4000);
 })();
