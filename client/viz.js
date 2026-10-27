@@ -150,6 +150,12 @@
         if (worst < 0) continue;
         ctx.fillStyle = MCOL[worst]; ctx.fillRect(px, y, 1, ML - 2);
       }
+      // Who the camera is pointed at (operated cams): a thin coloured line under the movement lane.
+      (m.framing || []).forEach(function (f) {
+        if (f.endSec < t0 || f.startSec > t1) return;
+        var xa = self.xAt(f.startSec), xb = self.xAt(f.endSec);
+        ctx.fillStyle = f.color; ctx.fillRect(xa, y + ML - 4, Math.max(1, xb - xa), 2);
+      });
       ctx.save(); ctx.font = "8px -apple-system, Segoe UI, sans-serif"; ctx.fillStyle = "rgba(255,255,255,.85)";
       ctx.fillText(m.name + " movement", 4, y + ML - 3); ctx.restore();
     });

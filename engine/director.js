@@ -65,7 +65,7 @@
     fastMinPct: 6,             // above this = a real move/reposition; never on air
     settleSec: 0.6,            // camera must have been steady this long before we cut to it
     maxWaitSec: 1.5,           // hold the previous shot up to this long waiting for the camera to settle
-    slowMovesOnAir: true,      // once on the shot, gentle moves (push-ins, drifts) may stay on air
+    slowMovesOnAir: false,     // once on the shot, may gentle moves (push-ins, drifts) stay on air? off: operator reframes look sloppy
     movePadSec: 0.2,           // leave a move this early / come back this late
     // Cleanup cuts (sections that will be removed)
     changeCameraAtCuts: true,  // the shots either side of a removed section must be different cameras (no jump cut)
@@ -477,7 +477,8 @@
     shots.forEach(function (s) {
       if (s.end <= s.start) return;
       var last = out[out.length - 1];
-      if (last && last.cameraId === s.cameraId && last.end === s.start && !last.locked && !s.locked) {
+      if (last && last.cameraId === s.cameraId && last.end === s.start && !last.locked && !s.locked &&
+          (last.reason === "reaction") === (s.reason === "reaction")) {
         last.end = s.end;
         // A shot that opens on a breath or overlap but settles on one speaker is a speaker shot.
         if ((last.reason === "pause" || last.reason === "hold" || last.reason === "crosstalk") && s.reason === "speaker") {
@@ -540,8 +541,9 @@
       // Leave room so the host shot survives on both sides.
       var room = Math.round(Math.min(style.minShotSec, 1.0) * fr);
       if (a - host.start < room || host.end - b < room) return;
-      var cam = style.interjectionMode === "wide" ? ctx.ci.widest : ctx.ci.fixedCloseups(ij.speaker)[0];
-      if (!cam || cam === host.cameraId) return;
+      var cam = style.interjectionMode === "wide" ? ctx.ci.widest : (ctx.ci.fixedCloseups(ij.speaker)[0] || framedOn(ctx, ij.speaker, a, b));
+      // Same camera is fine only for a follow cam that's pointed at the listener (it'll be off the speaker anyway).
+      if (!cam || (cam === host.cameraId && !ctx.ci.isFollow(cam))) return;
       shots = insertShot(shots, { start: a, end: b, cameraId: cam,
         reason: style.interjectionMode === "wide" ? "interjection-wide" : "reaction",
         speakers: [ij.speaker], onset: false, locked: false, keepShort: true });
@@ -757,6 +759,71 @@
     return mergeShots(out);
   }
 
+  // ------------------------------------------- 9c. who's in the shot (operated cams)
+
+  /** Per follow camera: who it is pointed at, per decision frame (-1 nobody known, -2 moving / no reading). */
+  function buildFraming(input, cameras, speakers, ctx) {
+    var grids = {};
+    var idx = {}; speakers.forEach(function (sp, i) { idx[sp.id] = i; });
+    cameras.forEach(function (c) {
+      var list = input.framing && input.framing[c.id];
+      if (!list) return;
+      var g = new Int16Array(ctx.frames).fill(-2);
+      list.forEach(function (st) {
+        var who = st.speakerId !== null && st.speakerId !== undefined && idx[st.speakerId] !== undefined ? idx[st.speakerId] : -1;
+        for (var f = Math.max(0, Math.round(st.startSec * ctx.fr)); f < Math.min(ctx.frames, Math.round(st.endSec * ctx.fr)); f++) g[f] = who;
+      });
+      grids[c.id] = g;
+    });
+    return grids;
+  }
+  /** Can camera `cam` show any of `speakersIdx` over [a, b)? True when we know nothing about its framing. */
+  function framingOk(ctx, cam, a, b, speakersIdx) {
+    var g = ctx.framing && ctx.framing[cam];
+    if (!g) return true;
+    for (var f = a; f < b; f++) if (speakersIdx.indexOf(g[f]) < 0) return false;
+    return true;
+  }
+  /** A follow camera that is on speaker `si` for the whole of [a, b), if any. */
+  function framedOn(ctx, si, a, b) {
+    var ids = Object.keys(ctx.framing || {});
+    for (var i = 0; i < ids.length; i++) if (ctx.ci.isFollow(ids[i]) && framingOk(ctx, ids[i], a, b, [si])) return ids[i];
+    return null;
+  }
+
+  /** Follow cams: replace the stretches where the camera is on someone other than the person in the shot. */
+  function applyFraming(shots, style, ctx) {
+    if (!ctx.framing || !Object.keys(ctx.framing).length) return shots;
+    var out = [];
+    var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    shots.forEach(function (s) {
+      var g = ctx.framing[s.cameraId];
+      if (!g || s.locked || !s.speakers || !s.speakers.length) { out.push(s); return; }
+      var pieces = [], from = s.start, on = s.speakers.indexOf(g[s.start]) >= 0;
+      for (var f = s.start; f < s.end; f++) {
+        var ok = s.speakers.indexOf(g[f]) >= 0;
+        if (ok !== on) { pieces.push({ a: from, b: f, on: on }); from = f; on = ok; }
+      }
+      pieces.push({ a: from, b: s.end, on: on });
+      pieces.forEach(function (p) {
+        var piece = copyShot(s); piece.start = p.a; piece.end = p.b; piece.onset = s.onset && p.a === s.start;
+        if (!p.on) {
+          var cands = [ctx.ci.widest];
+          s.speakers.forEach(function (si) { cands = cands.concat(ctx.ci.fixedCloseups(si)); });
+          cands = cands.concat(ctx.ci.list.map(function (c) { return c.cam.id; }));
+          for (var i = 0; i < cands.length; i++) {
+            var c = cands[i];
+            if (c && c !== s.cameraId && canShow(c, p.a, p.b) && framingOk(ctx, c, p.a, p.b, s.speakers)) {
+              piece.cameraId = c; piece.reason = "framing"; piece.keepShort = true; piece.onset = false; break;
+            }
+          }
+        }
+        out.push(piece);
+      });
+    });
+    return mergeShots(out);
+  }
+
   // ------------------------------------------------------- 10. cleanup
 
   function enforceMinShot(shots, speakers, style, ctx) {
@@ -782,8 +849,8 @@
       var sh = shots[worst], before = shots[worst - 1], after = shots[worst + 1];
       var target = null;
       var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
-      var okB = before && !before.locked && canShow(before.cameraId, sh.start, sh.end);
-      var okA = after && !after.locked && canShow(after.cameraId, sh.start, sh.end);
+      var okB = before && !before.locked && canShow(before.cameraId, sh.start, sh.end) && framingOk(ctx, before.cameraId, sh.start, sh.end, before.speakers || []);
+      var okA = after && !after.locked && canShow(after.cameraId, sh.start, sh.end) && framingOk(ctx, after.cameraId, sh.start, sh.end, after.speakers || []);
       if (okB && okA) target = (before.cameraId === after.cameraId || (before.end - before.start) >= (after.end - after.start)) ? before : after;
       else if (okB) target = before; else if (okA) target = after;
       if (!target) { sh.locked = true; sh._pinned = true; continue; }
@@ -880,6 +947,7 @@
     var ctx = { fr: fr, frames: frames, curves: curves, speakers: speakers, cal: cal, rand: rng(style.seed) };
     var built = buildShots(segs, speakers, cameras, style, ctx);
     ctx.ci = built.ci;
+    ctx.framing = buildFraming(input, cameras, speakers, ctx);
     var shots = built.shots;
     shots = applyInterjections(shots, classified.interjections, speakers, style, ctx);
     shots = applyCutaways(shots, speakers, style, ctx);
@@ -887,6 +955,7 @@
     ctx.stability = buildStability(input, cameras, style, ctx);
     ctx.stable = stabilityHelpers(ctx.stability, style, ctx);
     shots = applyStability(shots, style, ctx);
+    shots = applyFraming(shots, style, ctx);
     shots = enforceMinShot(shots, speakers, style, ctx);
     shots = applyRemovals(shots, config.removals, style, ctx);
     shots = applyOverrides(shots, config.overrides, ctx);
@@ -972,7 +1041,9 @@
         .filter(function (o) { return o.endSec > 0 && o.startSec < b - a; });
     };
     var cfg = merge(config, { overrides: shift(config.overrides), removals: shift(config.removals) });
-    var r = plan({ durationSec: b - a, hopSec: hop, fps: fps, curves: curves, cameraMotion: motion }, cfg);
+    var framing = {};
+    Object.keys(input.framing || {}).forEach(function (k) { framing[k] = shift(input.framing[k]); });
+    var r = plan({ durationSec: b - a, hopSec: hop, fps: fps, curves: curves, cameraMotion: motion, framing: framing }, cfg);
     var sh = function (t) { return round3(t + a); };
     r.shots.forEach(function (s) { s.startSec = sh(s.startSec); s.endSec = sh(s.endSec); });
     r.shots[r.shots.length - 1].endSec = round3(b);
@@ -1002,7 +1073,7 @@
   }
 
   return {
-    VERSION: "0.4.2",
+    VERSION: "0.5.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

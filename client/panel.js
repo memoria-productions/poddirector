@@ -153,7 +153,7 @@
           state.config = guessConfig(info);
           setNote(describeGuess(state.config, info));
         }
-        state.result = null; state.curves = {}; state.motion = {};
+        state.result = null; state.curves = {}; state.motion = {}; state.framing = {};
         state.tx = { segments: null, suggestions: [], off: {}, nudges: {} };
         loadCachedTranscript();
       }
@@ -618,6 +618,7 @@
         row.appendChild(el("div", { class: "muted small", text: "Click Analyze to check this camera for movement." }));
       }
       row.appendChild(chips);
+      renderFramingFor(cm, row);
       box.appendChild(row);
     });
   }
@@ -629,6 +630,7 @@
       state.config.speakers.forEach(function (s, k) { if (s.id === cm.shows[0]) si = k; });
       if (si >= 0) return colorOf(si);
     }
+    if (cm && cm.follows) return "#c79bf2"; // operated / follow cam: its own colour, not a speaker's
     var neutrals = ["#b8bec7", "#8d939c", "#d9d2c3", "#a7b8a8"];
     var n = 0;
     for (var k = 0; k < i; k++) { var c = state.config.cameras[k]; if (!c || c.shows.length !== 1) n++; }
@@ -826,6 +828,65 @@
     return state.config.speakers.filter(function (s) { return s.enabled !== false; }).every(function (s) { return state.curves[curveKey(s)]; });
   }
 
+  // ------------------------------------------------- who's in the shot
+  state.framing = {}; // key -> PodFraming.analyze result
+  function framingKey(cam) { return "v:" + cam.videoTrack + rangeKey() + "|" + state.config.speakers.map(curveKey).join(","); }
+  function framingInput(result) {
+    var out = {};
+    if (!window.PodFraming || !result) return out;
+    state.config.cameras.forEach(function (c) {
+      if (!c.follows || !c.moving || c.enabled === false) return;
+      var m = state.motion["v:" + c.videoTrack + rangeKey()];
+      if (!m || !m.thumbs) return;
+      var key = framingKey(c);
+      if (!state.framing[key]) {
+        var rng = currentRange();
+        state.framing[key] = window.PodFraming.analyze({ thumbs: m.thumbs, motion: m, speech: result.speech,
+          speakers: state.config.speakers.filter(function (x) { return x.enabled !== false; }),
+          steadyMaxPct: Math.max(1.5, (result.style && result.style.steadyMaxPct) || 1.2), range: rng });
+        log("Who's in the shot on " + c.name + ": " + state.framing[key].groups.length + " people found in " + state.framing[key].stretches.length + " steady stretches");
+        debounce("cams", renderCameras, 50);
+      }
+      out[c.id] = window.PodFraming.timeline(state.framing[key], framingNames(c, state.framing[key]));
+    });
+    return out;
+  }
+  /** Group -> speaker names: the editor's choices, falling back to the automatic guess. */
+  function framingNames(cam, fr) {
+    var saved = (state.config.framingNames || {})[cam.id] || {}, names = {};
+    fr.groups.forEach(function (g) { names[g.id] = Object.prototype.hasOwnProperty.call(saved, g.id) ? saved[g.id] : g.guess; });
+    return names;
+  }
+  function thumbCanvas(m, sec) {
+    var t = m.thumbs, cv = el("canvas", { width: t.w, height: t.h, class: "thumb" });
+    if (sec === null || sec === undefined || !t.valid[sec]) return cv;
+    var ctx2 = cv.getContext("2d"), img = ctx2.createImageData(t.w, t.h), size = t.w * t.h * 3;
+    for (var i = 0, j = 0; i < t.w * t.h; i++, j += 3) {
+      img.data[i * 4] = t.data[sec * size + j]; img.data[i * 4 + 1] = t.data[sec * size + j + 1]; img.data[i * 4 + 2] = t.data[sec * size + j + 2]; img.data[i * 4 + 3] = 255;
+    }
+    ctx2.putImageData(img, 0, 0);
+    return cv;
+  }
+  function renderFramingFor(cm, row) {
+    var m = state.motion["v:" + cm.videoTrack + rangeKey()], fr = state.framing[framingKey(cm)];
+    if (!cm.follows || !m || !fr) return;
+    var box = el("div", { class: "framing" }, [el("div", { class: "small", html: "<b>Who's in the shot</b> <span class=\"muted\">\u2014 guessed from who was talking; fix any that are wrong</span>" })]);
+    var names = framingNames(cm, fr);
+    var opts = [["", "Nobody / don't use"]].concat(state.config.speakers.map(function (sp) { return [sp.id, sp.name]; }));
+    fr.groups.slice().sort(function (a, b) { return b.seconds - a.seconds; }).forEach(function (g) {
+      var sel = select(opts, names[g.id] || "", function (v) {
+        state.config.framingNames = state.config.framingNames || {};
+        state.config.framingNames[cm.id] = state.config.framingNames[cm.id] || {};
+        state.config.framingNames[cm.id][g.id] = v || null;
+        changed(true);
+      });
+      box.appendChild(el("div", { class: "framing-row" }, [thumbCanvas(m, g.sampleSec), sel,
+        el("span", { class: "muted small", text: Math.round(g.seconds / 60) + " min" + (g.guess && names[g.id] === g.guess ? " \u00B7 guess" : "") })]));
+    });
+    if (!fr.groups.length) box.appendChild(el("div", { class: "muted small", text: "No steady stretches found to identify." }));
+    row.appendChild(box);
+  }
+
   function replan() {
     if (!state.seq || !curvesReady()) { viz.setData(null); state.result = null; setButtons(); $("vizHint").textContent = state.seq ? "analyze to see the cut" : ""; return; }
     var curves = {};
@@ -835,7 +896,11 @@
       var rng = currentRange();
       // Accepted cleanup cuts are passed in so the camera changes across each removed section.
       var planCfg = Object.assign({}, state.config, { removals: acceptedCuts() });
-      state.result = rng ? D.planRange(planInput, planCfg, rng.a, rng.b) : D.plan(planInput, planCfg);
+      var run = function () { return rng ? D.planRange(planInput, planCfg, rng.a, rng.b) : D.plan(planInput, planCfg); };
+      state.result = run();
+      // Operated cams: work out who they're pointed at (needs the speech found above), then plan again with it.
+      var framing = framingInput(state.result);
+      if (Object.keys(framing).length) { planInput.framing = framing; state.result = run(); }
     } catch (e) { status(e.message, "err"); state.result = null; setButtons(); return; }
     var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
     var cams = state.config.cameras.map(function (c, i) { return { id: c.id, name: c.name, color: camColor(i) }; });
@@ -846,7 +911,11 @@
       cameras: cams, cleanup: acceptedCuts(), range: currentRange(),
       motion: Object.keys(state.result.stability || {}).map(function (id) {
         var c = cams.filter(function (x) { return x.id === id; })[0];
-        return { id: id, name: c ? c.name : id, hopSec: state.result.stability[id].hopSec, states: state.result.stability[id].states, offsetSec: state.result.stability[id].offsetSec || 0 };
+        return { id: id, name: c ? c.name : id, hopSec: state.result.stability[id].hopSec, states: state.result.stability[id].states, offsetSec: state.result.stability[id].offsetSec || 0,
+          framing: (planInput.framing && planInput.framing[id] || []).map(function (f) {
+            var si = state.config.speakers.map(function (x) { return x.id; }).indexOf(f.speakerId);
+            return { startSec: f.startSec, endSec: f.endSec, color: si >= 0 ? colorOf(si) : "#555" };
+          }) };
       })
     });
     $("vizHint").textContent = "click = jump playhead · drag = lock a camera · wheel = zoom";
@@ -1060,6 +1129,7 @@
       sequence: { name: state.seq.name, fps: state.seq.fps, durationSec: state.seq.durationSec },
       range: currentRange() ? { startSec: currentRange().a, endSec: currentRange().b } : undefined,
       input: { durationSec: state.seq.durationSec, hopSec: HOP * down, fps: state.seq.fps, curves: curves,
+        framing: framingInput(state.result),
         cameraMotion: (function () {
           var m = cameraMotionInput(), o = {};
           Object.keys(m).forEach(function (id) { o[id] = { hopSec: m[id].hopSec, values: Array.prototype.map.call(m[id].values, function (v) { return isNaN(v) ? null : Math.round(v * 10) / 10; }) }; });

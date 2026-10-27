@@ -55,7 +55,7 @@ test("slow push-ins stay on air unless slowMovesOnAir is off; fast moves never d
   const input = talk();
   input.cameraMotion = { F: motion(42, [[31, 35, 3], [37, 38, 20]]) };
   const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
-  const on = D.plan(input, { speakers, cameras, style: base });
+  const on = D.plan(input, { speakers, cameras, style: Object.assign({ slowMovesOnAir: true }, base) });
   assert.equal(at(on, 33).cameraId, "F");
   assert.equal(at(on, 37.5).cameraId, "W");
   const off = D.plan(input, { speakers, cameras, style: Object.assign({ slowMovesOnAir: false }, base) });

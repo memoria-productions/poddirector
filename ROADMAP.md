@@ -24,13 +24,17 @@
 - **Recut** the existing copy in place (keeps nests) and **Undo recut** (last 5 versions).
 - Cleanup flags phone and alarm interruptions, including Whisper sound tags.
 
+## v0.5 (added)
+
+- **Who's in the shot** for operated cameras: steady stretches grouped by appearance and named from the audio, editable thumbnails, so the follow cam is used only when it's on the person talking (and can be a reaction shot when it's on a listener).
+- Cut away from any camera movement by default (slow moves on air is now opt-in).
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis
 - **Apply accepted cleanup cuts**: optional ripple delete of the accepted transcript ranges on the copy, not only markers
 - **Multicam-source output**: switch angles inside a Premiere multicam source sequence instead of enabling tracks
 - **Social reframe/export**: vertical and square versions (AutoPod's "Social Media Exporter")
-- **Face check for follow cams:** confirm the operator has actually landed on the person talking before cutting in
 - **Speaker labels in the transcript**: per-mic transcription for exact attribution when bleed is heavy
 - **Signed ZXP package**, so `PlayerDebugMode` is not needed
 - **UXP migration**: Adobe plans to disable CEP by default in Premiere around Dec 2028

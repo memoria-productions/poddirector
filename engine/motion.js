@@ -33,7 +33,9 @@
   var B = 16, HB = B >> 1;           // block size full / half res
   var R_HALF = 4;                    // coarse search radius (= ±8 px at full res)
   var MARGIN = 2 * R_HALF + 2;
-  var CACHE_VERSION = 5;
+  var CACHE_VERSION = 6;
+  // Small colour thumbnails (1 per second) for "who's in the shot" on operated cameras.
+  var TW = 32, TH = 18, TSIZE = TW * TH * 3;
 
   // Block grid (top-left corners at full resolution).
   var BLOCKS = (function () {
@@ -238,29 +240,52 @@
    * Camera motion for a source range. Resolves Float32Array (one value per HOP).
    * opts: { ffmpegPath, onProgress(fraction) }
    */
+  /** RGB frame -> luma (for motion) and, once a second, a 32x18 colour thumbnail. */
+  function toGray(rgb) {
+    var g = new Uint8Array(W * H);
+    for (var i = 0, j = 0; i < g.length; i++, j += 3) g[i] = (rgb[j] * 77 + rgb[j + 1] * 150 + rgb[j + 2] * 29) >> 8;
+    return g;
+  }
+  function thumbnail(rgb, out, offset) {
+    var bx = W / TW, by = H / TH; // 5 x 5 source pixels per thumbnail pixel
+    for (var ty = 0; ty < TH; ty++) for (var tx = 0; tx < TW; tx++) {
+      var r = 0, g = 0, b = 0, n = 0;
+      for (var y = ty * by; y < (ty + 1) * by; y++) for (var x = tx * bx; x < (tx + 1) * bx; x++) {
+        var k = (y * W + x) * 3; r += rgb[k]; g += rgb[k + 1]; b += rgb[k + 2]; n++;
+      }
+      var o = offset + (ty * TW + tx) * 3;
+      out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n;
+    }
+  }
+
+  /** Resolves { values: Float32Array (motion per HOP), thumbs: Uint8Array (one TWxTH RGB thumbnail per second) } */
   function analyzeRange(mediaPath, inSec, durSec, opts) {
     opts = opts || {};
     var key = cacheKey(mediaPath, inSec, durSec);
-    var file = path.join(cacheDir(), key + ".f32");
+    var file = path.join(cacheDir(), key + ".f32"), tfile = path.join(cacheDir(), key + ".thumbs");
     try {
-      var buf = fs.readFileSync(file);
-      return Promise.resolve(new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)));
+      var buf = fs.readFileSync(file), tb = fs.readFileSync(tfile);
+      return Promise.resolve({ values: new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)),
+        thumbs: new Uint8Array(tb.buffer.slice(tb.byteOffset, tb.byteOffset + tb.byteLength)) });
     } catch (e) { /* not cached */ }
 
-    var total = Math.ceil(durSec * FPS);
+    var total = Math.ceil(durSec * FPS), seconds = Math.ceil(durSec);
     var out = new Float32Array(total).fill(NaN);
+    var thumbs = new Uint8Array(seconds * TSIZE);
     var args = ["-hide_banner", "-nostats", "-loglevel", "error", "-hwaccel", "auto",
       "-ss", String(Math.max(0, inSec)), "-t", String(durSec), "-i", mediaPath,
-      "-an", "-sn", "-dn", "-vf", "fps=" + FPS + ",scale=" + W + ":" + H + ":flags=area,format=gray",
+      "-an", "-sn", "-dn", "-vf", "fps=" + FPS + ",scale=" + W + ":" + H + ":flags=area,format=rgb24",
       "-f", "rawvideo", "pipe:1"];
     return new Promise(function (resolve, reject) {
       var p = cp.spawn(opts.ffmpegPath || "ffmpeg", args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-      var frameSize = W * H, pending = Buffer.alloc(0), idx = 0, prev = null, prevHalf = null, err = "";
+      var frameSize = W * H * 3, pending = Buffer.alloc(0), idx = 0, prev = null, prevHalf = null, err = "";
       p.stdout.on("data", function (chunk) {
         pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
         while (pending.length >= frameSize) {
-          var cur = new Uint8Array(pending.buffer.slice(pending.byteOffset, pending.byteOffset + frameSize));
+          var rgb = new Uint8Array(pending.buffer.slice(pending.byteOffset, pending.byteOffset + frameSize));
           pending = pending.slice(frameSize);
+          if (idx % FPS === 0 && idx / FPS < seconds) thumbnail(rgb, thumbs, (idx / FPS) * TSIZE);
+          var cur = toGray(rgb);
           var curHalf = downsample(cur);
           if (prev && idx - 1 < total) out[idx - 1] = frameMotion(prev, cur, prevHalf, curHalf);
           prev = cur; prevHalf = curHalf; idx++;
@@ -272,8 +297,8 @@
       p.on("close", function (code) {
         if (code !== 0 && idx === 0) return reject(new Error("ffmpeg could not read video " + mediaPath + ": " + err.trim()));
         if (idx > 1 && idx - 1 < total) out[idx - 1] = out[idx - 2]; // last frame has no successor
-        try { fs.writeFileSync(file, Buffer.from(out.buffer)); } catch (e) { /* ignore */ }
-        resolve(out);
+        try { fs.writeFileSync(file, Buffer.from(out.buffer)); fs.writeFileSync(tfile, Buffer.from(thumbs.buffer)); } catch (e) { /* ignore */ }
+        resolve({ values: out, thumbs: thumbs });
       });
     });
   }
@@ -285,8 +310,9 @@
    */
   function analyzeTrack(track, durationSec, opts) {
     opts = opts || {};
-    var total = Math.ceil(durationSec * FPS);
+    var total = Math.ceil(durationSec * FPS), seconds = Math.ceil(durationSec);
     var curve = new Float32Array(total).fill(NaN);
+    var thumbs = new Uint8Array(seconds * TSIZE), hasThumb = new Uint8Array(seconds);
     var clips = (track.clips || []).filter(function (c) { return c.mediaPath && c.endSec > c.startSec; })
       .sort(function (a, b) { return a.startSec - b.startSec; });
     var dur = clips.reduce(function (s, c) { return s + c.endSec - c.startSec; }, 0) || 1, doneDur = 0;
@@ -296,19 +322,27 @@
         return analyzeRange(clip.mediaPath, clip.inPointSec || 0, len * speed, {
           ffmpegPath: opts.ffmpegPath,
           onProgress: function (f) { if (opts.onProgress) opts.onProgress((doneDur + f * len) / dur); }
-        }).then(function (vals) {
+        }).then(function (res) {
+          var vals = res.values;
           var start = Math.round(clip.startSec * FPS), n = Math.round(len * FPS);
           for (var k = 0; k < n; k++) {
             var src = Math.floor(k * speed);
             if (start + k >= 0 && start + k < total && src < vals.length) curve[start + k] = vals[src] * speed;
           }
+          // Thumbnails at whole sequence seconds.
+          for (var sec = Math.ceil(clip.startSec); sec < clip.endSec && sec < seconds; sec++) {
+            var ss = Math.floor((sec - clip.startSec) * speed);
+            if (ss >= 0 && (ss + 1) * TSIZE <= res.thumbs.length) { thumbs.set(res.thumbs.subarray(ss * TSIZE, (ss + 1) * TSIZE), sec * TSIZE); hasThumb[sec] = 1; }
+          }
           doneDur += len;
           if (opts.onProgress) opts.onProgress(doneDur / dur);
         });
       });
-    }, Promise.resolve()).then(function () { return { hopSec: HOP, values: curve }; });
+    }, Promise.resolve()).then(function () {
+      return { hopSec: HOP, values: curve, thumbs: { w: TW, h: TH, hopSec: 1, data: thumbs, valid: hasThumb } };
+    });
   }
 
-  return { HOP: HOP, FPS: FPS, W: W, H: H, analyzeRange: analyzeRange, analyzeTrack: analyzeTrack,
+  return { HOP: HOP, FPS: FPS, W: W, H: H, TW: TW, TH: TH, analyzeRange: analyzeRange, analyzeTrack: analyzeTrack,
            _internal: { frameMotion: frameMotion, downsample: downsample, fitSimilarity: fitSimilarity } };
 });

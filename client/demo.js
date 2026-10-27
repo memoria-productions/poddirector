@@ -14,9 +14,7 @@
       audioTracks: [at(0, "VOX1"), at(1, "VOX2"), at(2, "VOX3"), at(3, "SFX"), at(4, "Music")],
       videoTracks: [
         { index: 0, name: "Wide", clipCount: 1, firstClip: "CAM_WIDE.mp4", endSec: DUR, mediaPaths: ["/demo/wide.mp4"] },
-        { index: 1, name: "Host CU", clipCount: 1, firstClip: "CAM_A.mp4", endSec: DUR, mediaPaths: ["/demo/a.mp4"] },
-        { index: 2, name: "Cohost CU", clipCount: 1, firstClip: "CAM_B.mp4", endSec: DUR, mediaPaths: ["/demo/b.mp4"] },
-        { index: 3, name: "Guest dolly", clipCount: 1, firstClip: "CAM_C.mp4", endSec: DUR, mediaPaths: ["/demo/c.mp4"] }
+        { index: 1, name: "Dolly", clipCount: 1, firstClip: "CAM_DOLLY.mp4", endSec: DUR, mediaPaths: ["/demo/dolly.mp4"] }
       ]
     };
   }
@@ -82,16 +80,33 @@
     ];
   }
 
-  /** Camera motion for a dolly: occasional repositions, gentle push-ins, otherwise steady. */
+  /**
+   * An operated dolly: after someone starts talking the operator moves to them (1-2 s late, a 1.5 s move);
+   * now and then they hold on a listener instead. Returns motion + colour thumbnails of who's in frame.
+   */
+  var LOOKS = [[[50, 70, 170], [215, 175, 150]], [[175, 45, 55], [205, 165, 140]], [[60, 150, 80], [190, 150, 125]]];
   function motion(seq, track) {
     var hop = 1 / 6, n = Math.ceil(DUR / hop), v = new Float32Array(n), seed = 11 + track;
     function r() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
     for (var i = 0; i < n; i++) v[i] = r() * 0.5;
-    for (var t = 15; t < DUR - 10; t += 25 + r() * 30) {
-      var fast = r() < 0.55, len = fast ? 1 + r() * 2 : 3 + r() * 4, val = fast ? 8 + r() * 12 : 1.8 + r() * 2.5;
-      for (i = Math.round(t / hop); i < Math.min(n, Math.round((t + len) / hop)); i++) v[i] = val + r();
+    var on = new Int8Array(DUR).fill(0), lines = script().filter(function (l) { return l[2] - l[1] > 4; }), cur = 0;
+    lines.forEach(function (l) {
+      var who = r() < 0.15 ? (l[0] + 1) % 3 : l[0]; // sometimes the operator holds on a listener
+      if (who === cur) return;
+      var a = l[1] + 1 + r(), b = a + 1.5;
+      for (i = Math.round(a / hop); i < Math.min(n, Math.round(b / hop)); i++) v[i] = 9 + r() * 6;
+      for (var sec = Math.ceil(b); sec < DUR; sec++) on[sec] = who;
+      cur = who;
+    });
+    var W = 32, H = 18, size = W * H * 3, data = new Uint8Array(DUR * size), valid = new Uint8Array(DUR).fill(1);
+    for (var sec2 = 0; sec2 < DUR; sec2++) {
+      var look = LOOKS[on[sec2]], jit = sec2 % 3 - 1;
+      for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+        var k = sec2 * size + (y * W + x) * 3, c = (x > 9 + jit && x < 23 + jit) ? (y < 7 ? look[1] : look[0]) : [92, 86, 80];
+        data[k] = c[0]; data[k + 1] = c[1]; data[k + 2] = c[2];
+      }
     }
-    return { hopSec: hop, values: v };
+    return { hopSec: hop, values: v, thumbs: { w: W, h: H, hopSec: 1, data: data, valid: valid } };
   }
 
   window.PD_DEMO = { sequence: sequence, curves: curves, transcript: transcript, motion: motion };

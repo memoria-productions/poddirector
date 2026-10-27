@@ -103,10 +103,20 @@ This group appears once **Check for movement** is on for a camera. PodDirector m
 - **Steady below / Big move above:** the two thresholds, in percent of frame width per second. Between them is a *slow move*, such as a gentle push-in or a drift.
 - **Settle time:** how long the camera must be steady before PodDirector cuts to it, so you never land on the tail end of a move.
 - **Wait to settle:** if a cut would land mid-move, PodDirector holds the previous shot up to this long. Longer moves go to the wide until the camera settles.
-- **Slow moves on air:** keep gentle push-ins on screen once you're on that camera, or cut away from any movement.
+- **Slow moves on air:** keep gentle push-ins on screen once you're on that camera, or cut away from any movement. It's off by default, so any visible reframing or drift cuts to the wide.
 - **Leave move early by:** how early to cut away before a big move starts.
 
 Typical setup, one static wide plus one operated dolly camera: turn on **Check for movement** and **Follows speaker** for the dolly, and leave both off for the wide. The edit then reads: dolly on whoever is talking when it's steady, the wide while the operator re-frames, back to the dolly once it settles.
+
+**Who's in the shot (operated cameras).** An operator doesn't always stay on whoever is talking: they may hold on a listener, or be late moving to the next person. For a camera with **Follows speaker** and **Check for movement** both on, PodDirector also works out who it's pointed at:
+
+- It splits the camera's footage into steady stretches, between moves.
+- It groups stretches that look alike, using the colours in the middle of the frame (clothes, skin, hair), so each group is one person.
+- It names each group after whoever was usually talking while the camera sat on it.
+
+The camera row then shows a thumbnail per group with that guess. Fix any that are wrong, or choose *Nobody / don't use*. The dolly is then only used while it's on the person talking, so it never shows Jess while Paul is talking. If it happens to be on a listener when they laugh or say "yeah", it can serve as their reaction shot. In the preview, a thin coloured line under the movement lane shows who it was on.
+
+If two people dress alike they may land in the same group; set that group to *Nobody* and PodDirector uses the wide there instead.
 
 If the camera row says *plain background, treated as steady*, the shot doesn't have enough detail behind the subject (a bare wall, a seamless backdrop) to measure camera movement. Watch the result there, and lock any bad moments by dragging on the preview.
 
