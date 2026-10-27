@@ -113,6 +113,23 @@ var PD = (function () {
     return ok();
   }
 
+  /** json: { inSec?, outSec? } -> sets the active sequence's In and/or Out point. */
+  function setInOut(json) {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var o = JSON.parse(json);
+    function put(fn, v) {
+      try { seq[fn](Number(v)); return; } catch (e) { /* older versions want a string or a Time */ }
+      try { seq[fn](String(v)); return; } catch (e2) { /* fall through */ }
+      var t = new Time(); t.seconds = Number(v); seq[fn](t);
+    }
+    try {
+      if (o.inSec !== undefined && o.inSec !== null) put("setInPoint", o.inSec);
+      if (o.outSec !== undefined && o.outSec !== null) put("setOutPoint", o.outSec);
+    } catch (e3) { return fail("Couldn't set In/Out: " + e3); }
+    return ok({ inSec: parseFloat(seq.getInPoint()), outSec: parseFloat(seq.getOutPoint()) });
+  }
+
   /** json: { prefix, markers: [{ startSec, endSec?, name, comment, color }] }  color = 0..7 */
   function addMarkers(json) {
     var seq = seqOrFail();
@@ -259,5 +276,5 @@ var PD = (function () {
 
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
-           razorTrack: razorTrack, applyEnables: applyEnables, openSequenceById: openSequenceById };
+           razorTrack: razorTrack, applyEnables: applyEnables, openSequenceById: openSequenceById, setInOut: setInOut };
 })();

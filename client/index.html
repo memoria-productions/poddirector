@@ -160,6 +160,8 @@
       <div class="kv"><span>Transcriber</span><span id="whisperPath" class="mono">checking&hellip;</span></div>
       <div class="kv"><span>Model</span><span id="modelPath" class="mono"></span></div>
       <label class="field">Custom model (.bin) <input id="modelCustom" placeholder="Optional: e.g. ggml-small.en.bin for more accuracy" /></label>
+      <label class="field">Show name <input id="showName" placeholder="e.g. Classical et cetera" /></label>
+      <p class="muted small">Cleanup treats &ldquo;welcome to &lt;show name&gt;&rdquo; as the start of the show and flags the chat before it.</p>
       <label class="field">Vocabulary hint for transcription <input id="txPrompt" placeholder="Names, jargon: Memoria Press, Latin, Highlands" /></label>
       <div class="actions two">
         <button id="btnRecheck" class="btn">Re-check tools</button>

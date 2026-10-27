@@ -100,6 +100,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .sug-text { color: var(--muted); margin-top: 3px; max-height: 3.9em; overflow: hidden; }
 .sug-nudge { margin-left: auto; display: flex; gap: 2px; }
 .sug-nudge button { font-size: 10px; padding: 0 4px; }
+.sug-actions { margin: 4px 0 2px; }
 
 .kv { display: grid; grid-template-columns: 80px 1fr; gap: 6px; margin: 4px 0; }
 .status { position: fixed; left: 0; right: 0; bottom: 0; background: #161616; border-top: 1px solid var(--line); padding: 6px 10px; display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-items: center; z-index: 6; }

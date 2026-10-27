@@ -145,3 +145,17 @@ test("recut in place: a second plan applied over the first ends up exactly as th
   }
   assert.equal(call('PD.openSequenceById("nope")').ok, false);
 });
+
+test("host sets the sequence In point at the welcome", () => {
+  const fake = fakePremiere(60, 2);
+  let inSec = null;
+  fake.seq.setInPoint = (v) => { inSec = Number(v); };
+  fake.seq.getInPoint = () => String(inSec);
+  fake.seq.getOutPoint = () => "60";
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const r = JSON.parse(vm.runInContext("PD.setInOut(" + JSON.stringify(JSON.stringify({ inSec: 12.5 })) + ")", fake.ctx));
+  assert.ok(r.ok, r.error);
+  assert.equal(inSec, 12.5);
+  assert.equal(r.inSec, 12.5);
+});

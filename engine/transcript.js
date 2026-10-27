@@ -171,7 +171,8 @@
     minConfidence: 0.4,
     offRecordMaxSec: 600,
     backChainSec: 45,       // after a cut cue, "okay, we're back" must come within this of the last cut/back phrase
-    backMaxSec: 240         // and within this of the first cue
+    backMaxSec: 240,        // and within this of the first cue
+    showName: ""            // the welcome address names the show ("welcome to Classical et cetera"): the show starts there
   };
 
   /**
@@ -382,7 +383,15 @@
 
   // ----------------------------------------------- pre- and post-show
 
-  var INTRO = /\b((hello|hi|hey|good (morning|afternoon|evening))( everyone| everybody| all)?( and)? )?welcome (back )?to (another|the|this|our|today'?s|episode|part)\b/;
+  var INTRO = /\b((hello|hi|hey|good (morning|afternoon|evening))( everyone| everybody| all| folks)?( and)? welcome\b|welcome (back )?to (another|the|this|our|today'?s|episode|part|season)\b)/;
+  var NOT_INTRO = /\b(you'?re|you are|are|be|is|always|more than) welcome\b/;
+  /** "et cetera", "etcetera", "etc." all read the same, so a show name matches however the transcriber spelled it. */
+  function showKey(t) { return normalize(t).replace(/\bet ?cetera\b|\betc\b/g, "etc").replace(/\s+/g, " ").trim(); }
+  function isIntro(st, o) {
+    var t = showKey(st.norm);
+    if (o.showName && t.indexOf("welcome") >= 0 && t.indexOf(showKey(o.showName)) >= 0) return "show";
+    return INTRO.test(st.norm) && !NOT_INTRO.test(st.norm) ? "generic" : null;
+  }
   var OUTRO = /\b(thank(s| you)( all| everyone| everybody| so much)? for (joining|listening|watching)|(we'?ll|we will) (see|be back|talk to)( with)?( you| y'?all)? (next time|next week|soon)|see you next (time|week)|until next time)\b/;
 
   /** Chatter before the opening line and after the sign-off. */
@@ -390,12 +399,20 @@
     var res = [];
     if (!segs.length) return res;
     var endT = segs[segs.length - 1].endSec, all = sentenceStream(segs, 0, 0);
-    for (var k = 0; k < all.length && all[k].startSec < endT * 0.3; k++) {
-      if (all[k].startSec > 30 && INTRO.test(all[k].norm)) {
-        res.push({ startSec: segs[0].startSec, endSec: all[k].startSec - o.padSec * 2, type: "pre-show", confidence: 0.7, review: "end",
-          trigger: all[k].text, reason: "Before the show opens: \u201c" + all[k].text.slice(0, 40) + "\u201d" });
-        break;
-      }
+    // The welcome address with the show's name wins; otherwise the first generic "hello and welcome to the…".
+    var intro = null;
+    for (var k = 0; k < all.length && all[k].startSec < endT * 0.35; k++) {
+      var kind = all[k].startSec > 30 ? isIntro(all[k], o) : null;
+      if (kind === "show") { intro = all[k]; intro.kind = kind; break; }
+      if (kind === "generic" && !intro) { intro = all[k]; intro.kind = kind; }
+    }
+    if (intro) {
+      // Start the show at the greeting that leads into the welcome ("Hello and welcome…" may be its own sentence).
+      var idx = all.indexOf(intro), from = intro;
+      if (idx > 0 && all[idx - 1].n <= 3 && /^(hello|hi|hey|good (morning|afternoon|evening)|welcome)\b/.test(all[idx - 1].norm)) from = all[idx - 1];
+      res.push({ startSec: segs[0].startSec, endSec: Math.max(segs[0].startSec, from.startSec - o.padSec * 2), type: "pre-show",
+        confidence: intro.kind === "show" ? 0.85 : 0.7, review: "end", showStartSec: from.startSec,
+        trigger: intro.text, reason: "Before the welcome: \u201c" + intro.text.slice(0, 60) + "\u201d" });
     }
     for (k = all.length - 1; k >= 0 && all[k].startSec > endT * 0.7; k--) {
       if (!OUTRO.test(all[k].norm)) continue;
@@ -407,7 +424,7 @@
       }
       var n = 0; tail.forEach(function (t) { n += t.n; });
       if (!tail.length || tail.some(function (t) { return OUTRO.test(t.norm); }) || n > 60 || prevEnd - all[k].endSec > 40) continue;
-      res.push({ startSec: all[k].endSec, endSec: prevEnd, type: "post-show", confidence: 0.65, review: "start",
+      res.push({ startSec: all[k].endSec, endSec: prevEnd, type: "post-show", showEndSec: all[k].endSec, confidence: 0.65, review: "start",
         trigger: all[k].text, reason: "After the sign-off: \u201c" + all[k].text.slice(0, 40) + "\u201d" });
       break;
     }
@@ -457,6 +474,8 @@
         if (s.confidence > last.confidence) { last.type = s.type; last.trigger = s.trigger; last.reason = s.reason; }
         last.confidence = Math.max(last.confidence, s.confidence) + 0.05; // corroborated
         last.reasons = (last.reasons || [last.reason]).concat([s.reason]);
+        if (s.showStartSec !== undefined) last.showStartSec = s.showStartSec;
+        if (s.showEndSec !== undefined) last.showEndSec = s.showEndSec;
       } else out.push(s);
     });
     return out;
@@ -464,7 +483,7 @@
 
   function textBetween(segs, a, b) {
     return segs.filter(function (s) { return s.endSec > a && s.startSec < b; })
-      .map(function (s) { return (s.speaker ? s.speaker + ": " : "") + s.text; }).join(" ").slice(0, 600);
+      .map(function (s) { return (s.speaker && !/^unknown$/i.test(s.speaker) ? s.speaker + ": " : "") + s.text; }).join(" ").slice(0, 600);
   }
   function round2(v) { return Math.round(v * 100) / 100; }
 

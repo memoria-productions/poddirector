@@ -189,3 +189,17 @@ test("Classical et cetera #244: the abandoned Narnia tangent is cut from where i
   const end = r.suggestions.find((s) => s.startSec > 62 * 60);
   assert.ok(end && end.startSec > 62 * 60 + 25 && end.endSec >= 62 * 60 + 45, "'So David, cut.' after the sign-off");
 });
+
+test("pre-show ends at the welcome address with the show's name, however it's spelled", () => {
+  const segs = [
+    { startSec: 0, endSec: 40, text: "So how was the drive in? You're welcome to stay for lunch after." },
+    { startSec: 41, endSec: 70, text: "Welcome to the new studio, by the way. It looks great." },
+    { startSec: 71, endSec: 200, text: "Okay, are we rolling? Yep. Welcome to Classical etcetera, I'm Jessica, and with me today are Paul and Martin." },
+    { startSec: 201, endSec: 900, text: "Today we're talking about the nineteenth century novel and why it matters so much." }
+  ];
+  const named = T.analyze(segs, { showName: "Classical et cetera" }).suggestions.find((s) => s.type === "pre-show");
+  assert.ok(named && named.showStartSec > 71 && named.showStartSec < 120, "starts at the named welcome: " + (named && named.showStartSec));
+  const generic = T.analyze(segs, {}).suggestions.find((s) => s.type === "pre-show");
+  assert.ok(generic && generic.showStartSec < 45, "without a show name the first 'welcome to the…' counts");
+  assert.ok(!T.analyze([segs[0], segs[3]], {}).suggestions.some((s) => s.type === "pre-show"), "'you're welcome to' is not an opening");
+});

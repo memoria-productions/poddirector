@@ -95,6 +95,8 @@
     $("modelCustom").value = load("modelCustom", "");
     $("txPrompt").value = load("txPrompt", "");
     state.cleanupOpts = Object.assign(copy(T.DEFAULTS), load("cleanupOpts", {}));
+    state.cleanupOpts.showName = load("showName", "Classical et cetera");
+    $("showName").value = state.cleanupOpts.showName;
 
     // tabs
     Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (b) {
@@ -1266,10 +1268,34 @@
         el("span", { class: "sug-nudge" }, [nudge(0, -0.5), nudge(0, 0.5), nudge(1, -0.5), nudge(1, 0.5)])
       ]));
       item.appendChild(el("div", { class: "small", text: s.reason }));
+      // The show's real start/end: set the sequence In/Out there so the multicam pass skips the chatter too.
+      if (s.showStartSec !== undefined || s.showEndSec !== undefined) {
+        var isStart = s.showStartSec !== undefined, at = isStart ? s.showStartSec : s.showEndSec;
+        item.appendChild(el("div", { class: "sug-actions" }, [el("button", { class: "btn ghost small",
+          text: (isStart ? "Set In point at the welcome (" : "Set Out point at the sign-off (") + fmt(at) + ")",
+          title: "Sets the sequence " + (isStart ? "In" : "Out") + " point so Analyze and the cut skip the " + (isStart ? "pre-show" : "post-show") + " chat",
+          onclick: function () { setShowEdge(isStart, at); } })]));
+      }
       item.appendChild(el("div", { class: "sug-text", text: s.text }));
       box.appendChild(item);
     });
   }
+
+  var setShowEdge = guard(function (isStart, sec) {
+    if (!state.seq) throw new Error("Scan a sequence first.");
+    var q = state.seq;
+    if (isStart && q.outSec != null && sec >= q.outSec) throw new Error("The welcome (" + fmt(sec) + ") is after the Out point. Move the Out point first.");
+    if (!isStart && q.inSec != null && sec <= q.inSec) throw new Error("The sign-off (" + fmt(sec) + ") is before the In point.");
+    var arg = isStart ? { inSec: sec } : { outSec: sec };
+    function done() {
+      if (isStart) state.seq.inSec = sec; else state.seq.outSec = sec;
+      state.config.range = "inout"; saveConfig(); renderRangeSelect();
+      state.result = null; replan();
+      status((isStart ? "In" : "Out") + " point set at " + fmt(sec) + ". Click Analyze waveforms to cut only the show.", "", 0);
+    }
+    if (!inPremiere) { done(); return; }
+    return callHost("setInOut", [JSON.stringify(arg)]).then(done);
+  });
 
   var transcribe = guard(function () {
     if (!state.seq) throw new Error("Scan a sequence first.");
@@ -1478,6 +1504,9 @@
     checkTools().then(function () { status("Tools re-checked.", "ok"); });
   };
   $("txPrompt").onchange = function () { store("txPrompt", $("txPrompt").value.trim()); };
+  $("showName").onchange = function () {
+    state.cleanupOpts.showName = $("showName").value.trim(); store("showName", state.cleanupOpts.showName); runCleanup();
+  };
   $("btnClearCache").onclick = function () { var n = A.clearCache(); state.curves = {}; replan(); status("Cleared " + n + " cached waveforms.", "ok"); };
   $("btnOpenDocs").onclick = function () {
     if (!hasNode) return;

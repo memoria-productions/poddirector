@@ -31,6 +31,7 @@
 - **Max cuts / min** cap (drops the least important cuts first) and a "Shots by reason" breakdown under the preview.
 - **Minimum wide**: wide shots run at least 5 s by default.
 - Cleanup follows an abandoned tangent from the cut cue to "okay, we're back", and flags pre-show and post-show chatter (v0.5.4).
+- The welcome address with the show's name marks the start of the show, with one-click In/Out points (v0.5.5).
 
 ## Next candidates
 
