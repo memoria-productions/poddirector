@@ -1144,7 +1144,18 @@
     return r;
   }
 
-  function toEditPayload(result, cameras, fps) {
+  /**
+   * Edit instructions for the host. Per video track: where to razor and which stretches to enable.
+   *
+   * Layered (default): Premiere shows the top-most enabled clip, so the bottom camera track (usually the static
+   * wide) is never razored or disabled: it shows wherever nothing above it is enabled. A camera above it only
+   * needs a razor where its own on/off state changes; while a camera higher up is showing, the ones below are
+   * hidden anyway, so they keep whatever state saves a cut. With two cameras only the top one is ever cut.
+   * Not layered: every camera track is cut at every shot change and exactly one is enabled (older behaviour).
+   */
+  function toEditPayload(result, cameras, fps, opts) {
+    opts = opts || {};
+    var layered = opts.layered !== false;
     var camById = {};
     cameras.forEach(function (c) { camById[c.id] = c; });
     var cuts = [];
@@ -1155,15 +1166,47 @@
     });
     // Range plans also cut at the Out mark so whatever follows (outro) stays exactly as it was.
     if (result.range && shots.length) cuts.push(shots[shots.length - 1].endFrame);
+
+    var trackIds = [];
+    cameras.forEach(function (c) { if (c.videoTrack >= 0 && trackIds.indexOf(c.videoTrack) < 0) trackIds.push(c.videoTrack); });
+    trackIds.sort(function (x, y) { return x - y; });
+    var base = layered && trackIds.length > 1 ? trackIds[0] : -1;
+    var tracks = trackIds.map(function (t) {
+      // Wanted state per shot: true / false / null (hidden under a higher camera: either is fine).
+      var want = shots.map(function (sh) {
+        if (t === base) return true;
+        if (!layered) return sh.videoTrack === t;
+        if (sh.videoTrack === t) return true;
+        if (sh.videoTrack < 0 || sh.videoTrack < t) return false; // showing a camera below (or the base): stay out of the way
+        return null;
+      });
+      var firstKnown = null;
+      for (var i = 0; i < want.length && firstKnown === null; i++) firstKnown = want[i];
+      var prev = firstKnown === null ? false : firstKnown;
+      want = want.map(function (w) { if (w === null) return prev; prev = w; return w; });
+      var segs = [], tc = [];
+      shots.forEach(function (sh, k) {
+        var last = segs[segs.length - 1];
+        if (last && last.enabled === want[k] && last.endFrame === sh.startFrame) last.endFrame = sh.endFrame;
+        else { segs.push({ startFrame: sh.startFrame, endFrame: sh.endFrame, enabled: want[k] }); }
+      });
+      if (t !== base) {
+        segs.forEach(function (sg, k) { if (k > 0 || sg.startFrame > 0) tc.push(sg.startFrame); });
+        if (result.range && segs.length) tc.push(segs[segs.length - 1].endFrame);
+      }
+      return { track: t, base: t === base, cuts: tc, segments: segs };
+    });
     return {
+      layered: layered,
       cameraTracks: cameras.map(function (c) { return c.videoTrack; }),
       cutFrames: cuts,
-      shots: shots
+      shots: shots,
+      tracks: tracks
     };
   }
 
   return {
-    VERSION: "0.5.5",
+    VERSION: "0.6.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

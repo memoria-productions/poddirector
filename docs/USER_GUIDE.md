@@ -59,6 +59,7 @@ Tips:
    - **Drag** across a range, then pick a camera to **lock** it there. "Auto" unlocks it.
 8. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
 9. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.**
+   - By default the **bottom camera track** (V1, usually the static wide) is left whole and enabled: Premiere shows the top-most enabled clip, so the wide shows through wherever the cameras above it are switched off. Only the cameras above it are razored, and only where they actually switch on or off. With a wide on V1 and the solo cam on V2, that's one track instead of two and far fewer edits. Keep your wide on the lowest camera track. Untick **Leave the bottom camera whole** (Cameras card) to go back to cutting every camera.
 10. **Recut** to try a different style or fix a few shots. Adjust the preview, then click **Recut "… - PodDirector"**. This changes the same copy in place instead of making a new one, so if you've already nested that copy into your master timeline, the nest picks up the new cut automatically. Old edit points stay behind as invisible through-edits. **Undo recut** puts the previous version back (the last 5 are kept). Recut overwrites any cameras you switched by hand in that copy, so lock those shots in the preview first (drag across them and pick a camera).
 
 ---
@@ -196,6 +197,6 @@ Updates can come from two places:
 | Reactions feel random | Lower **Reaction frequency**, or turn off **Reacts on screen** for the chatty listener. |
 | PodDirector cuts to the dolly while it's still moving | Raise **Settle time**, or lower **Steady below**. |
 | The dolly is hardly used | Check its movement lane. If it's mostly amber, raise **Steady below** a little or turn on **Slow moves on air**. |
-| Build is slow on a long show | Razoring runs about 20–50 ms per cut per camera track. A 1-hour show with 600 cuts on 3 cameras takes about a minute. |
+| Build is slow on a long show | Razoring runs about 20–50 ms per edit. Leave **Leave the bottom camera whole** on: the wide on V1 isn't cut at all, and the cameras above it are only cut where they switch on or off. |
 
 Files (presets, transcripts, exports, cut lists) are saved in **Documents\PodDirector**.

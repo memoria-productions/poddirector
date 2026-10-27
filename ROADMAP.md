@@ -33,6 +33,10 @@
 - Cleanup follows an abandoned tangent from the cut cue to "okay, we're back", and flags pre-show and post-show chatter (v0.5.4).
 - The welcome address with the show's name marks the start of the show, with one-click In/Out points (v0.5.5).
 
+## v0.6 (added)
+
+- **Layered cut:** the bottom camera (the wide) stays whole and enabled; only the cameras above it are razored, where they switch. About half the edits with two cameras, and recut cleans up older full cuts.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

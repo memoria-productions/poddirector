@@ -230,7 +230,8 @@ var PD = (function () {
     return ok({ razored: n, skipped: skipped });
   }
 
-  /** json: { sequenceID, cameraTracks: [..], shots: [{startFrame,endFrame,videoTrack}] } */
+  /** json: { sequenceID, tracks: [{track, segments:[{startFrame,endFrame,enabled}]}] }
+   *  or (older payloads) { sequenceID, cameraTracks: [..], shots: [{startFrame,endFrame,videoTrack}] } */
   function applyEnables(json) {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
@@ -246,6 +247,24 @@ var PD = (function () {
         else return shots[mid];
       }
       return null;
+    }
+    // Per-track stretches (layered edits: the bottom camera stays enabled, cameras above switch on and off).
+    if (p.tracks) {
+      for (var k = 0; k < p.tracks.length; k++) {
+        var tr = p.tracks[k], vt2 = seq.videoTracks[tr.track], sg = tr.segments;
+        if (!vt2) continue;
+        for (var c2 = 0; c2 < vt2.clips.numItems; c2++) {
+          var clip2 = vt2.clips[c2];
+          var f = Math.floor((parseFloat(clip2.start.ticks) + parseFloat(clip2.end.ticks)) / 2 / tpf), seg = null;
+          for (var lo = 0, hi = sg.length - 1; lo <= hi;) {
+            var m = (lo + hi) >> 1;
+            if (sg[m].endFrame <= f) lo = m + 1; else if (sg[m].startFrame > f) hi = m - 1; else { seg = sg[m]; break; }
+          }
+          if (!seg) continue;
+          try { if (clip2.disabled !== !seg.enabled) { clip2.disabled = !seg.enabled; toggled++; } } catch (e6) { /* not toggleable */ }
+        }
+      }
+      return ok({ toggled: toggled });
     }
     for (var t = 0; t < p.cameraTracks.length; t++) {
       var idx = p.cameraTracks[t], vt = seq.videoTracks[idx];

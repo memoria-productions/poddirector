@@ -1046,8 +1046,11 @@
     var tracks = [];
     payload.cameraTracks.forEach(function (t) { if (tracks.indexOf(t) < 0) tracks.push(t); });
     var CHUNK = 250, steps = [];
-    tracks.forEach(function (t) {
-      for (var i = 0; i < payload.cutFrames.length; i += CHUNK) steps.push({ track: t, frames: payload.cutFrames.slice(i, i + CHUNK) });
+    // Layered payloads razor each track only where it changes (never the bottom camera); older ones razor every track.
+    var perTrack = payload.tracks ? payload.tracks.map(function (x) { return { track: x.track, frames: x.cuts }; })
+      : tracks.map(function (t) { return { track: t, frames: payload.cutFrames }; });
+    perTrack.forEach(function (x) {
+      for (var i = 0; i < x.frames.length; i += CHUNK) steps.push({ track: x.track, frames: x.frames.slice(i, i + CHUNK) });
     });
     var n = 0, razored = 0;
     return steps.reduce(function (p, st) {
@@ -1060,13 +1063,14 @@
     }, Promise.resolve()).then(function () {
       log("Razored " + razored + " edit points");
       status("Switching cameras\u2026", "", 0.93);
-      return callHost("applyEnables", [JSON.stringify({ sequenceID: seqId, cameraTracks: tracks, shots: payload.shots })]);
+      return callHost("applyEnables", [JSON.stringify(payload.tracks ? { sequenceID: seqId, tracks: payload.tracks }
+        : { sequenceID: seqId, cameraTracks: tracks, shots: payload.shots })]);
     });
   }
 
   function currentPayload() {
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
-    return D.toEditPayload(state.result, cams, state.seq.fps);
+    return D.toEditPayload(state.result, cams, state.seq.fps, { layered: load("layered", true) !== false });
   }
 
   var applyCut = guard(function () {
@@ -1503,6 +1507,8 @@
     store("ffmpegCustom", $("ffmpegCustom").value.trim()); store("modelCustom", $("modelCustom").value.trim());
     checkTools().then(function () { status("Tools re-checked.", "ok"); });
   };
+  $("layered").checked = load("layered", true) !== false;
+  $("layered").onchange = function () { store("layered", this.checked); };
   $("txPrompt").onchange = function () { store("txPrompt", $("txPrompt").value.trim()); };
   $("showName").onchange = function () {
     state.cleanupOpts.showName = $("showName").value.trim(); store("showName", state.cleanupOpts.showName); runCleanup();

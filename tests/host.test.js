@@ -80,7 +80,7 @@ test("host applies a planned cut: razors and enables exactly one camera per shot
   const cameras = [{ id: "a", videoTrack: 0, shows: ["H"] }, { id: "b", videoTrack: 1, shows: ["G"] }, { id: "w", videoTrack: 2, shows: ["H", "G"] }];
   const input = makeCurves([["H", 1, 12], ["G", 12.4, 25], ["H", 25.5, 38]], { durationSec: dur, speakers: ["H", "G"] });
   const plan = D.plan(input, { speakers: [{ id: "H", name: "Host" }, { id: "G", name: "Guest" }], cameras });
-  const payload = D.toEditPayload(plan, cameras, FPS);
+  const payload = D.toEditPayload(plan, cameras, FPS, { layered: false });
 
   const dup = call('PD.duplicateActive("seq-1", " - PD")');
   assert.ok(dup.ok, dup.error);
@@ -128,22 +128,69 @@ test("recut in place: a second plan applied over the first ends up exactly as th
   const input = makeCurves([["H", 1, 12], ["G", 12.4, 25], ["H", 25.5, 38]], { durationSec: dur, speakers: ["H", "G"] });
   const speakersHG = [{ id: "H", name: "Host" }, { id: "G", name: "Guest" }];
   const write = (seqId, payload) => {
+    for (const x of payload.tracks) call("PD.razorTrack(" + JSON.stringify(JSON.stringify({ sequenceID: seqId, track: x.track, frames: x.cuts })) + ")");
+    return call("PD.applyEnables(" + JSON.stringify(JSON.stringify({ sequenceID: seqId, tracks: payload.tracks })) + ")");
+  };
+  const writeOld = (seqId, payload) => {
     for (const t of payload.cameraTracks) call("PD.razorTrack(" + JSON.stringify(JSON.stringify({ sequenceID: seqId, track: t, frames: payload.cutFrames })) + ")");
     return call("PD.applyEnables(" + JSON.stringify(JSON.stringify({ sequenceID: seqId, cameraTracks: payload.cameraTracks, shots: payload.shots })) + ")");
   };
   const dup = call('PD.duplicateActive("seq-1", " - PD")');
-  const p1 = D.toEditPayload(D.plan(input, { speakers: speakersHG, cameras, preset: "calm" }), cameras, FPS);
-  write(dup.sequenceID, p1);
+  // First cut in the old every-track style, then recut layered over it: the bottom track must come back whole-enabled.
+  const p1 = D.toEditPayload(D.plan(input, { speakers: speakersHG, cameras, preset: "calm" }), cameras, FPS, { layered: false });
+  writeOld(dup.sequenceID, p1);
   assert.ok(call('PD.openSequenceById("' + dup.sequenceID + '")').ok);
   const plan2 = D.plan(input, { speakers: speakersHG, cameras, preset: "social" });
   write(dup.sequenceID, D.toEditPayload(plan2, cameras, FPS));
   for (let t = 0.5; t < dur; t += 0.5) {
-    const ticks = t * TPS;
-    const enabled = fake.video.map((tr, i) => { const c = tr._clips.find((x) => +x.start.ticks <= ticks && +x.end.ticks > ticks); return c && !c.disabled ? i : -1; }).filter((i) => i >= 0);
     const want = cameras.find((c) => c.id === plan2.shots.find((s) => s.startSec <= t && s.endSec > t).cameraId).videoTrack;
-    assert.deepEqual(enabled, [want], "at " + t + "s");
+    assert.equal(visible(fake, t), want, "at " + t + "s");
   }
+  assert.ok(fake.video[0]._clips.every((c) => !c.disabled), "bottom camera all enabled");
   assert.equal(call('PD.openSequenceById("nope")').ok, false);
+});
+
+/** The camera Premiere shows: the top-most enabled clip. */
+function visible(fake, t) {
+  const ticks = t * TPS;
+  for (let i = fake.video.length - 1; i >= 0; i--) {
+    const c = fake.video[i]._clips.find((x) => +x.start.ticks <= ticks && +x.end.ticks > ticks);
+    if (c && !c.disabled) return i;
+  }
+  return -1;
+}
+
+test("layered cut: the bottom camera is never razored, the cameras above only where they change", () => {
+  const dur = 60;
+  const fake = fakePremiere(dur, 2);
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const call = (expr) => JSON.parse(vm.runInContext(expr, fake.ctx));
+  // V1 static wide underneath, V2 solo camera on top (the Classical et cetera setup).
+  const cameras = [{ id: "w", videoTrack: 0, shows: ["H", "G"] }, { id: "solo", videoTrack: 1, shows: [], follows: true }];
+  const input = makeCurves([["H", 1, 12], ["G", 12.4, 25], ["H", 25.5, 38], ["G", 38.5, 58]], { durationSec: dur, speakers: ["H", "G"] });
+  const plan = D.plan(input, { speakers: [{ id: "H", name: "Host" }, { id: "G", name: "Guest" }], cameras, style: { maxShotSec: 6, cutawayMode: "wide" } });
+  const payload = D.toEditPayload(plan, cameras, FPS);
+  const dup = call('PD.duplicateActive("seq-1", " - PD")');
+  for (const x of payload.tracks) assert.ok(call("PD.razorTrack(" + JSON.stringify(JSON.stringify({ sequenceID: dup.sequenceID, track: x.track, frames: x.cuts })) + ")").ok);
+  assert.ok(call("PD.applyEnables(" + JSON.stringify(JSON.stringify({ sequenceID: dup.sequenceID, tracks: payload.tracks })) + ")").ok);
+  assert.equal(fake.video[0]._clips.length, 1, "wide untouched");
+  assert.ok(!fake.video[0]._clips[0].disabled);
+  assert.ok(fake.video[1]._clips.length > 1, "solo cam was cut");
+  for (let t = 0.5; t < dur; t += 0.5) {
+    const want = cameras.find((c) => c.id === plan.shots.find((s) => s.startSec <= t && s.endSec > t).cameraId).videoTrack;
+    assert.equal(visible(fake, t), want, "at " + t + "s");
+  }
+});
+
+test("layered payload: with three cameras the middle one isn't cut while the top one covers it", () => {
+  const cams = [{ id: "w", videoTrack: 0 }, { id: "a", videoTrack: 1 }, { id: "b", videoTrack: 2 }];
+  const shot = (a, b, c) => ({ startSec: a, endSec: b, cameraId: c });
+  const p = D.toEditPayload({ shots: [shot(0, 5, "a"), shot(5, 9, "b"), shot(9, 14, "a"), shot(14, 20, "w")] }, cams, 10);
+  const byTrack = {}; p.tracks.forEach((x) => { byTrack[x.track] = x; });
+  assert.deepEqual(byTrack[0].cuts, [], "base never cut");
+  assert.deepEqual(byTrack[1].cuts, [140], "middle cam stays on under the top cam, off only for the wide");
+  assert.deepEqual(byTrack[2].cuts, [50, 90]);
 });
 
 test("host sets the sequence In point at the welcome", () => {
