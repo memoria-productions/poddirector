@@ -208,9 +208,12 @@ test("multicamAtPlayhead finds a multicam clip under the playhead (and says when
   const call = (expr) => JSON.parse(vm.runInContext(expr, fake.ctx));
   let r = call("PD.multicamAtPlayhead()");
   assert.ok(r.ok && r.multicam === null && r.fps === 30);
-  fake.video[1]._clips[0].projectItem.isMulticamClip = () => true;
+  fake.video[0]._clips[0].projectItem.isSequence = () => true; // a plain nest on V1
   r = call("PD.multicamAtPlayhead()");
-  assert.deepEqual(r.multicam, { track: 1, name: "cam1.mp4", startSec: 0, endSec: 30 });
+  assert.deepEqual(r.multicam, { track: 0, name: "cam0.mp4", startSec: 0, endSec: 30, multicam: false });
+  fake.video[1]._clips[0].projectItem.isMulticamClip = () => true; // a real multicam clip wins
+  r = call("PD.multicamAtPlayhead()");
+  assert.deepEqual(r.multicam, { track: 1, name: "cam1.mp4", startSec: 0, endSec: 30, multicam: true });
 });
 
 test("layered payload: with three cameras the middle one isn't cut while the top one covers it", () => {

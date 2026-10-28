@@ -1716,7 +1716,7 @@
   var K = window.PodKeys, kbdStop = false;
   function cutKeys() {
     if (!hasNode || !K || !state.docsDir) return null;
-    var files = K.findShortcutFiles(path.dirname(state.docsDir));
+    var files = K.findShortcutFiles([path.dirname(state.docsDir)]);
     if (!files.length) return { file: null, cams: [] };
     try { return { file: files[0], cams: K.cutToCameraKeys(K.parseShortcuts(fs.readFileSync(files[0].path, "utf8")), 4) }; }
     catch (e) { return { file: files[0], cams: [], error: e.message }; }
@@ -1725,7 +1725,11 @@
     var box = $("kbdKeys"); box.innerHTML = "";
     var k = cutKeys();
     if (!k) { box.textContent = "Needs the panel running inside Premiere on Windows."; return; }
-    if (!k.file) { box.textContent = "Couldn't find your Premiere keyboard shortcuts file (Documents\\Adobe\\Premiere Pro\\<version>\\Profile-…\\Win)."; return; }
+    if (!k.file) {
+      box.textContent = "Couldn't find your Premiere keyboard shortcuts file. Looked in " +
+        K.documentsFolders([path.dirname(state.docsDir)]).map(function (d) { return path.join(d, "Adobe", "Premiere Pro"); }).join(" and ") + ".";
+      return;
+    }
     box.appendChild(el("div", { class: "muted", text: "From " + path.basename(k.file.path) + " (Premiere " + k.file.version + "):" }));
     k.cams.slice(0, 2).forEach(function (c) {
       box.appendChild(el("div", { text: "Cut to Camera " + c.camera + ": " + (c.label || "no shortcut") +
@@ -1734,6 +1738,12 @@
   }
 
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  /** A host call that gives up after ms instead of hanging (Premiere can stop answering while a dialog is open). */
+  function callHostWithin(ms, fn, args) {
+    return Promise.race([callHost(fn, args), wait(ms).then(function () {
+      throw new Error("Premiere didn't answer " + fn + " within " + Math.round(ms / 1000) + " s. Is a dialog open in Premiere?");
+    })]);
+  }
 
   /**
    * Trial: from the playhead, every few seconds, cut to camera 2, 1, 2, … on the multicam clip under the
@@ -1742,20 +1752,30 @@
   var runKbdTrial = guard(function () {
     if (!inPremiere || !hasNode || !K) throw new Error("The keystroke trial needs the panel running inside Premiere on Windows.");
     var k = cutKeys();
-    if (!k || !k.cams.length || !k.cams[0].usable || !k.cams[1].usable) {
-      throw new Error("Give Cut to Camera 1 and 2 a typeable shortcut (Edit > Keyboard Shortcuts), then try again.");
+    if (!k || !k.file) throw new Error("Couldn't find your Premiere keyboard shortcuts file, so PodDirector doesn't know your Cut to Camera keys.");
+    renderKbdKeys();
+    if (!k.cams.length || !k.cams[0].usable || !k.cams[1].usable) {
+      throw new Error("Cut to Camera 1 and 2 need a letter, digit or symbol shortcut (Edit > Keyboard Shortcuts). Found: " +
+        k.cams.slice(0, 2).map(function (c) { return "camera " + c.camera + " = " + (c.label || "none"); }).join(", ") + ".");
     }
     var count = Math.max(2, Math.min(40, +$("kbdCount").value || 6)), every = Math.max(0.5, +$("kbdEvery").value || 2);
     var pause = Math.max(50, Math.min(2000, +$("kbdPause").value || 250));
     var sender = null, info = null, sent = [];
     kbdStop = false;
     function say(t) { $("kbdStatus").textContent = t; status(t, ""); }
-    return callHost("multicamAtPlayhead").then(function (r) {
+    function step(t) { log("Keystroke trial: " + t); }
+    step("keys " + k.cams[0].label + " / " + k.cams[1].label + " from " + k.file.path);
+    step("looking for a multicam clip under the playhead");
+    return callHostWithin(10000, "multicamAtPlayhead").then(function (r) {
       info = r;
-      if (!r.multicam) throw new Error("There's no multicam clip under the playhead in “" + r.name + "”. Park the playhead on one and try again.");
+      if (!r.multicam) throw new Error("There's no multicam or nested clip under the playhead in “" + r.name + "”. Park the playhead on one and try again.");
+      step("found “" + r.multicam.name + "” on V" + (r.multicam.track + 1) + " (" + (r.multicam.multicam ? "multicam" : "nested sequence; make sure Multi-Camera is enabled on it") + ")");
+      if (!r.multicam.multicam) say("“" + r.multicam.name + "” is a nested sequence: right-click it > Multi-Camera > Enable if you haven't.");
+      step("starting the keystroke helper");
       return K.startSender();
     }).then(function (s) {
       sender = s;
+      step("helper ready; counting down");
       var n = 5;
       function tick() {
         if (kbdStop) throw new Error("Stopped.");
@@ -1767,6 +1787,7 @@
     }).then(function () {
       return sender.front();
     }).then(function (title) {
+      step("window in front: “" + title.slice(0, 60) + "”");
       if (title.indexOf("Adobe Premiere Pro") < 0) throw new Error("Premiere wasn't the window in front (“" + title.slice(0, 40) + "”), so nothing was sent.");
       var i = 0, t0 = Date.now();
       function next() {
@@ -1777,9 +1798,10 @@
         var cam = i % 2 === 0 ? k.cams[1] : k.cams[0];
         i++;
         say("Cut " + i + " of " + count + ": camera " + cam.camera + " at " + fmt(at));
-        return callHost("setPlayhead", [at]).then(function () { return wait(pause); }).then(function () {
+        return callHostWithin(10000, "setPlayhead", [at]).then(function () { return wait(pause); }).then(function () {
           return sender.send(cam.usable);
         }).then(function (reply) {
+          step("cut " + i + ": " + cam.label + " at " + fmt(at) + " → " + reply);
           if (reply !== "OK") throw new Error(reply.indexOf("NOFOCUS") === 0 ? "Premiere stopped being the window in front; stopped after " + sent.length + " cuts." : "Couldn't type " + cam.label + " (" + reply + ").");
           sent.push({ sec: at, camera: cam.camera });
           return wait(pause);
@@ -1787,7 +1809,7 @@
       }
       return next().then(function () {
         log("Keystroke trial on " + info.name + " (" + info.multicam.name + "): " + sent.map(function (s) { return fmt(s.sec) + " cam " + s.camera; }).join(", "));
-        return callHost("setPlayhead", [info.playheadSec]);
+        return callHostWithin(10000, "setPlayhead", [info.playheadSec]);
       }).then(function () {
         say("Sent " + sent.length + " cuts in " + ((Date.now() - t0) / 1000).toFixed(1) + " s, from " + fmt(info.playheadSec) +
           ". Check the timeline: there should be a cut every " + every + " s, alternating camera 2 and 1. The times are in the Log.");

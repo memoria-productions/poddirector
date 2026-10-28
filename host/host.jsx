@@ -284,23 +284,29 @@ var PD = (function () {
   }
 
   /**
-   * For the keystroke trial: is there a multicam clip under the playhead in the active sequence?
-   * -> { sequenceID, name, playheadSec, fps, multicam: { track, name, startSec, endSec } | null }
+   * For the keystroke trial: is there a multicam clip under the playhead in the active sequence? A multicam
+   * source sequence counts; so does a nested sequence (Multi-Camera > Enable can't be read from scripts, so
+   * the panel asks the user to check it). Multicam clips win over nests.
+   * -> { sequenceID, name, playheadSec, fps, multicam: { track, name, startSec, endSec, multicam: bool } | null }
    */
   function multicamAtPlayhead() {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
-    var at = sec(seq.getPlayerPosition()), found = null;
+    var at = sec(seq.getPlayerPosition()), found = null, nest = null;
     for (var i = 0; i < seq.videoTracks.numTracks && !found; i++) {
       var vt = seq.videoTracks[i];
       for (var c = 0; c < vt.clips.numItems; c++) {
         var clip = vt.clips[c];
         if (sec(clip.start) > at || sec(clip.end) <= at) continue;
-        var mc = false;
+        var mc = false, isSeq = false;
         try { mc = !!(clip.projectItem && clip.projectItem.isMulticamClip && clip.projectItem.isMulticamClip()); } catch (e) { mc = false; }
-        if (mc) { found = { track: i, name: clip.name, startSec: sec(clip.start), endSec: sec(clip.end) }; break; }
+        try { isSeq = !!(clip.projectItem && clip.projectItem.isSequence && clip.projectItem.isSequence()); } catch (e3) { isSeq = false; }
+        var hit = { track: i, name: clip.name, startSec: sec(clip.start), endSec: sec(clip.end), multicam: mc };
+        if (mc) { found = hit; break; }
+        if (isSeq && !nest) nest = hit;
       }
     }
+    if (!found) found = nest;
     var fps = 30;
     try { fps = Math.round(TPS / parseFloat(seq.timebase) * 1000) / 1000; } catch (e2) { fps = 30; }
     return ok({ sequenceID: seq.sequenceID, name: seq.name, playheadSec: at, fps: fps, multicam: found });

@@ -57,10 +57,33 @@
   }
 
   /**
-   * Premiere's keyboard shortcut files, newest first. documentsDir: the user's Documents folder (it may be
-   * redirected to a network share, so pass the real one). Looks in Adobe\Premiere Pro\<version>\Profile-*\Win.
+   * Where Windows really keeps Documents. Folder redirection (e.g. to a network share) moves it away from
+   * %USERPROFILE%\Documents, and Premiere follows the redirect.
    */
-  function findShortcutFiles(documentsDir) {
+  function documentsFolders(extra) {
+    var list = [].concat(extra || []);
+    if (process.platform === "win32") {
+      try {
+        var out = cp.execSync('reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders" /v Personal',
+          { encoding: "utf8", windowsHide: true, timeout: 5000 });
+        var m = /Personal\s+REG_\w+\s+(.+)/.exec(out);
+        if (m) list.unshift(m[1].trim());
+      } catch (e) { /* fall back to the usual places */ }
+    }
+    if (process.env.USERPROFILE) list.push(path.join(process.env.USERPROFILE, "Documents"));
+    return list.filter(function (d, i) { return d && list.indexOf(d) === i; });
+  }
+
+  /**
+   * Premiere's keyboard shortcut files, newest first, from Adobe\Premiere Pro\<version>\Profile-*\Win in each of
+   * the given Documents folders (or, by default, wherever Windows keeps Documents).
+   */
+  function findShortcutFiles(documentsDirs) {
+    var files = [];
+    documentsFolders(documentsDirs).forEach(function (d) { files = files.concat(shortcutFilesIn(d)); });
+    return files.sort(function (a, b) { return b.mtime - a.mtime; });
+  }
+  function shortcutFilesIn(documentsDir) {
     var base = path.join(documentsDir, "Adobe", "Premiere Pro"), files = [];
     try {
       fs.readdirSync(base).forEach(function (ver) {
@@ -78,7 +101,7 @@
         } catch (e) { /* not a folder */ }
       });
     } catch (e) { /* no Premiere settings here */ }
-    return files.sort(function (a, b) { return b.mtime - a.mtime; });
+    return files;
   }
 
   // The helper: reads commands on stdin, one per line.
@@ -160,5 +183,5 @@
   }
 
   return { parseShortcuts: parseShortcuts, cutToCameraKeys: cutToCameraKeys, describe: describe,
-           findShortcutFiles: findShortcutFiles, startSender: startSender };
+           findShortcutFiles: findShortcutFiles, documentsFolders: documentsFolders, startSender: startSender };
 });
