@@ -48,6 +48,11 @@
 - **Close-ups / wide slider:** leans the whole cut toward the speaker close-ups or the static wide (some turns play on the wide).
 - **Feature slider per person** (replaces Priority): more screen time for a special guest.
 
+## v0.8 (added)
+
+- **Introduction:** finds the welcome, the host and everyone introduced in the transcript; the cut opens on the host's solo cam, then the wide for the introductions; lower-third name markers with editable name-tag text.
+- **Reload instead of restart:** after an update, Reload PodDirector loads the new version in place; Premiere only needs restarting when the manifest changed.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

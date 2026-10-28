@@ -5,7 +5,8 @@
  *   - GitHub Releases of the PodDirector repo (works when the repo is public)
  *   - an update folder, e.g. a shared network drive, holding PodDirector-x.y.z-Windows.zip files
  * and installs it by unzipping the package and running its install.ps1 -Silent, which mirrors
- * the new files over the installed extension. Premiere needs a restart afterwards.
+ * the new files over the installed extension. Reopening the panel loads the new files; Premiere only needs
+ * a restart when the manifest changed (beyond its version numbers), since it reads that at startup.
  */
 (function (root, factory) {
   var api = factory();
@@ -112,11 +113,29 @@
     });
   }
 
+  /** The manifest without its version numbers and layout: two equal signatures need no Premiere restart. */
+  function manifestSignature(xml) {
+    return String(xml)
+      .replace(/(ExtensionBundleVersion|Version)="\d+\.\d+\.\d+"/g, '$1=""')
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\s+/g, " ").trim();
+  }
+
+  /** Does going from the installed manifest to the package's one need a Premiere restart? Unknown = yes. */
+  function needsRestart(installedManifest, newManifest) {
+    try {
+      return manifestSignature(fs.readFileSync(installedManifest, "utf8")) !== manifestSignature(fs.readFileSync(newManifest, "utf8"));
+    } catch (e) { return true; }
+  }
+
   /**
    * Download (if needed), unpack and install an update. Windows only.
-   * release: result of check().latest; onProgress(stage, fraction)
+   * release: result of check().latest; onProgress(stage, fraction); opts.extensionRoot: the installed extension
+   * Resolves { version, log, needsRestart }.
    */
-  function install(release, onProgress) {
+  function install(release, onProgress, opts) {
+    opts = opts || {};
+    var restart = true;
     if (process.platform !== "win32") return Promise.reject(new Error("Automatic install is only available on Windows."));
     onProgress = onProgress || function () {};
     var work = fs.mkdtempSync(path.join(os.tmpdir(), "poddirector-update-"));
@@ -133,14 +152,17 @@
       var top = fs.readdirSync(path.join(work, "x")).map(function (f) { return path.join(work, "x", f); })
         .filter(function (f) { return fs.existsSync(path.join(f, "install.ps1")); })[0];
       if (!top) throw new Error("The update package has no installer in it.");
+      // Compare manifests before the installer overwrites the old one.
+      if (opts.extensionRoot) restart = needsRestart(path.join(opts.extensionRoot, "CSXS", "manifest.xml"), path.join(top, "PodDirector", "CSXS", "manifest.xml"));
       onProgress("install", 0);
       return run(ps, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(top, "install.ps1"), "-Silent"]);
     }).then(function (log) {
       try { fs.rmSync ? fs.rmSync(work, { recursive: true, force: true }) : null; } catch (e) { /* temp cleanup is best-effort */ }
       onProgress("done", 1);
-      return { version: release.version, log: log };
+      return { version: release.version, log: log, needsRestart: restart };
     });
   }
 
-  return { DEFAULT_REPO: DEFAULT_REPO, compare: cmp, check: check, checkGitHub: checkGitHub, checkFolder: checkFolder, install: install };
+  return { DEFAULT_REPO: DEFAULT_REPO, compare: cmp, check: check, checkGitHub: checkGitHub, checkFolder: checkFolder, install: install,
+           manifestSignature: manifestSignature, needsRestart: needsRestart };
 });

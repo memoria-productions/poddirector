@@ -200,13 +200,28 @@ Under the preview you'll see the number of cuts, cuts per minute, average and lo
 5. **Mark selected on timeline** adds red range markers. Review them in context, then lift or ripple-delete the ones you agree with. PodDirector never deletes anything for you.
 6. **Copy for Claude review** copies the flagged list plus the full transcript, ready to paste into Claude for a second opinion.
 
+### Introduction and name tags
+
+When the transcript has the welcome ("Hello and welcome to … Classical et cetera"), the **Introduction** card finds:
+
+- **The welcome** and who's hosting. The host is whoever says "I'm Jessica Abood" or "my name is …".
+- **Everyone they introduce,** in order, with the time each name is said. People are matched by the speaker names on the Multicam tab, so name your speakers. Guests are picked up from phrases like "we're joined by Dr. Malcolm Guite" or "our guest today is …".
+
+With **Open on the host's solo cam, then the wide for the introductions** ticked (the default), the multicam cut opens on the host's close-up, or the follow cam when it's on them and steady, through the welcome. It goes to the wide at the first other name and holds the wide past the last one, for at least Minimum wide. Normal cutting picks up after that. Any shots you've locked in the preview still win.
+
+Each name has a text box for its name tag: type the full name or title, and it's remembered for next time. **Add lower-third markers** drops a yellow 5-second marker at each name, labelled with that text, so you can drop your name tag graphics on them. **Clear name markers** removes them. Name times are estimates when the transcript only has a timecode every 20 seconds or so, as Premiere's text export does. Whisper transcripts carry word timings and land closer.
+
 Add names and jargon under Settings → *Vocabulary hint* to improve transcription accuracy.
 
 ---
 
 ## 6. Updating
 
-PodDirector checks for a newer version when the panel opens (at most twice a day). When one is available, a blue bar at the top offers **Update now**. That downloads and installs it, and then you restart Premiere Pro. You can also check by hand under **Settings → Updates**.
+PodDirector checks for a newer version when the panel opens (at most twice a day). When one is available, a blue bar at the top offers **Update now**, which downloads and installs it. You can also check by hand under **Settings → Updates**.
+
+Once it's installed, click **Reload PodDirector** in the bar to start using the new version. There's no need to restart Premiere Pro, and your settings are kept. Wait for any build or recut to finish first. The same button is under **Settings → Updates**. Closing the panel and reopening it from **Window → Extensions → PodDirector** does the same thing.
+
+A few updates change how Premiere loads the panel (its manifest), which Premiere only reads at startup. PodDirector detects this. For those updates the bar asks you to save your project and restart Premiere Pro instead.
 
 Updates can come from two places:
 

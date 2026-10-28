@@ -7,7 +7,7 @@
   var hasNode = typeof require === "function" && typeof process !== "undefined";
   var D = window.PodDirector, T = window.PodTranscript, A = window.PodAnalyzer, W = window.PodTranscriber, UI = window.PD_UI;
   var fs = hasNode ? require("fs") : null, path = hasNode ? require("path") : null, os = hasNode ? require("os") : null;
-  var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ";
+  var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ", MARK_NAME = "[PD name] ";
   var HOP = 0.025;
 
   var state = {
@@ -515,7 +515,7 @@
     state.config.speakers.forEach(function (sp, i) {
       var row = el("div", { class: "row" + (sp._open ? " open" : "") });
       row.style.setProperty("--sw", colorOf(i));
-      var name = el("input", { class: "name", value: sp.name, oninput: function () { sp.name = name.value; renderCameras(); renderFeature(); changed(true); } });
+      var name = el("input", { class: "name", value: sp.name, oninput: function () { sp.name = name.value; renderCameras(); renderFeature(); changed(true); debounce("intro", runCleanup, 400); } });
       var chans = [["mix", "All ch"], [0, "Ch 1"], [1, "Ch 2"], [2, "Ch 3"], [3, "Ch 4"], [4, "Ch 5"], [5, "Ch 6"], [6, "Ch 7"], [7, "Ch 8"]];
       var main = el("div", { class: "row-main" }, [
         name,
@@ -1067,7 +1067,7 @@
       var planInput = { durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves, cameraMotion: cameraMotionInput() };
       var rng = currentRange();
       // Accepted cleanup cuts are passed in so the camera changes across each removed section.
-      var planCfg = Object.assign({}, state.config, { removals: acceptedCuts() });
+      var planCfg = Object.assign({}, state.config, { removals: acceptedCuts(), intro: introPlan() });
       var run = function () { return rng ? D.planRange(planInput, planCfg, rng.a, rng.b) : D.plan(planInput, planCfg); };
       state.result = run();
       // Operated cams: work out who they're pointed at (needs the speech found above), then plan again with it.
@@ -1152,7 +1152,7 @@
       box.appendChild(el("div", { class: "stat" }, [el("b", { text: String(p[0]) }), el("span", { text: p[1] })]));
     });
     // Why the cuts happen: helps decide which setting to change.
-    var WHY = { speaker: "speaker changes", "wide-turn": "turns on the wide", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
+    var WHY = { speaker: "speaker changes", "wide-turn": "turns on the wide", intro: "host's welcome", "intro-wide": "introductions (wide)", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
       hold: "holds", crosstalk: "talking over", cutaway: "monologue cutaways", "camera-move": "dolly moving", framing: "dolly on someone else",
       opening: "opening", "jump-cover": "cleanup cover", removed: "removed sections", locked: "your locks" };
     var reasons = Object.keys(s.reasons || {}).sort(function (a, b) { return s.reasons[b] - s.reasons[a]; });
@@ -1436,8 +1436,61 @@
     var segs = T.assignSpeakers(state.tx.segments, speakerRunsByName());
     var res = T.analyze(segs, state.cleanupOpts);
     state.tx.suggestions = res.suggestions;
-    renderSuggestions(); refreshVizCleanup(); setButtons();
+    state.tx.intro = T.introduction(segs, { showName: state.cleanupOpts.showName,
+      names: state.config ? state.config.speakers.filter(function (s) { return s.enabled !== false; }).map(function (s) { return s.name; }) : [] });
+    renderSuggestions(); renderIntro(); refreshVizCleanup(); setButtons();
   }
+
+  // ------------------------------------------------------- introduction
+  /** Name-tag text per person, editable and remembered ("Martin" -> "Martin Cothran"). */
+  function tagFor(n) { var saved = load("nameTags", {}); return saved[n.name] || n.fullName || n.name; }
+
+  function renderIntro() {
+    var it = state.tx.intro, card = $("introCard");
+    card.classList.toggle("hidden", !it);
+    $("btnIntroMarkers").disabled = !it || !it.names.length || !inPremiere || state.busy;
+    if (!it) return;
+    $("introWhen").textContent = "welcome at " + fmt(it.welcomeSec) + (it.host ? " · " + it.host.name + " hosting" : "");
+    $("introCut").checked = state.config.introCut !== false;
+    $("introNote").textContent = "“" + it.welcomeText.slice(0, 90) + "” — solo cam until " + fmt(it.wideSec) +
+      ", then the wide until " + fmt(it.endSec) + ". Times come from the transcript; check them before dropping name tags.";
+    var box = $("introNames"); box.innerHTML = "";
+    if (!it.names.length) { box.appendChild(el("div", { class: "muted small", text: "Nobody named yet: speaker names on the Multicam tab are matched against the introduction." })); return; }
+    it.names.forEach(function (n) {
+      var input = el("input", { value: tagFor(n), title: "Text for this person's lower third",
+        onchange: function () { var all = load("nameTags", {}); all[n.name] = input.value.trim(); store("nameTags", all); } });
+      box.appendChild(el("div", { class: "intro-name" }, [
+        el("span", { class: "time", text: fmt(n.sec), title: "Jump there", onclick: function () { seek(n.sec); } }),
+        input,
+        el("span", { class: "tag", text: n.host ? "host" : n.guest ? "guest" : "" })
+      ]));
+    });
+  }
+
+  /** The intro as the cut engine wants it, or null when it's off or there's no transcript. */
+  function introPlan() {
+    var it = state.tx.intro;
+    if (!it || state.config.introCut === false) return null;
+    var hostId = null;
+    if (it.host) state.config.speakers.forEach(function (s) {
+      if (s.name.split(/\s+/)[0].toLowerCase() === it.host.name.split(/\s+/)[0].toLowerCase()) hostId = s.id;
+    });
+    return { startSec: it.welcomeSec, wideSec: it.wideSec, endSec: it.endSec, hostId: hostId };
+  }
+
+  var markNames = guard(function () {
+    var it = state.tx.intro;
+    var markers = it.names.map(function (n) {
+      return { startSec: n.sec, endSec: n.sec + 5, name: tagFor(n), color: 4,
+        comment: "Lower third" + (n.host ? " (host)" : n.guest ? " (guest)" : "") + ": " + tagFor(n) };
+    });
+    return callHost("clearMarkers", [MARK_NAME]).then(function () {
+      return callHost("addMarkers", [JSON.stringify({ prefix: MARK_NAME, markers: markers })]);
+    }).then(function (r) { status("Added " + r.added + " name markers in yellow for the lower thirds.", "ok", 1); });
+  });
+  var clearNames = guard(function () {
+    return callHost("clearMarkers", [MARK_NAME]).then(function (r) { status("Removed " + r.removed + " name markers.", "ok"); });
+  });
 
   function sugRange(s) {
     var n = state.tx.nudges[s.id] || [0, 0];
@@ -1625,17 +1678,38 @@
     var labels = { copy: "Copying update", download: "Downloading update", unpack: "Unpacking", install: "Installing", done: "Installed" };
     return U.install(pending, function (stage, f) {
       status(labels[stage] + (f && f < 1 ? " " + Math.round(f * 100) + "%" : "") + "\u2026", "", stage === "download" ? f * 0.7 : stage === "install" ? 0.85 : stage === "done" ? 1 : 0.75);
-    }).then(function (r) {
+    }, { extensionRoot: state.extRoot }).then(function (r) {
       log(r.log);
-      $("updateStatus").textContent = "Installed " + r.version + ". Restart Premiere Pro to finish.";
-      $("updateText").textContent = "PodDirector " + r.version + " is installed. Save your project and restart Premiere Pro to use it.";
       $("btnUpdateNow").classList.add("hidden");
-      $("btnUpdateLater").textContent = "OK";
       $("updateBanner").classList.remove("hidden");
-      status("Update installed \u2014 restart Premiere Pro to finish.", "ok", 1);
+      if (r.needsRestart) {
+        // The manifest changed (more than its version): Premiere only reads it at startup.
+        $("updateStatus").textContent = "Installed " + r.version + ". This update changes how Premiere loads the panel: restart Premiere Pro to finish.";
+        $("updateText").textContent = "PodDirector " + r.version + " is installed. Save your project and restart Premiere Pro to use it.";
+        $("btnUpdateLater").textContent = "OK";
+        status("Update installed \u2014 restart Premiere Pro to finish.", "ok", 1);
+      } else {
+        $("updateStatus").textContent = "Installed " + r.version + ". Click Reload PodDirector to start using it; no need to restart Premiere.";
+        $("updateText").textContent = "PodDirector " + r.version + " is installed.";
+        $("btnReloadBanner").classList.remove("hidden");
+        $("btnUpdateLater").textContent = "Later";
+        status("Update installed \u2014 reload PodDirector to use it.", "ok", 1);
+      }
       pending = null; $("btnInstallUpdate").disabled = true;
     });
   });
+
+  /**
+   * Load the installed files again without restarting Premiere: re-run the host script (it redefines PD) and
+   * reload the panel page. Settings live in localStorage and the Documents folder, so they survive.
+   */
+  function reloadPanel() {
+    if (state.busy) { status("Wait for the current job to finish, then reload.", "err"); return; }
+    status("Reloading PodDirector\u2026", "", 0.5);
+    if (!inPremiere || !state.extRoot) { location.reload(); return; }
+    var jsx = path.join(state.extRoot, "host", "host.jsx").replace(/\\/g, "/");
+    cs.evalScript("$.evalFile(new File(" + JSON.stringify(jsx) + "))", function () { location.reload(); });
+  }
 
   // ------------------------------------------------------------ wiring
   function setButtons() {
@@ -1746,6 +1820,11 @@
   $("updateGithub").onchange = function () { store("updateGithub", this.checked); };
   $("btnCheckUpdates").onclick = function () { checkUpdates(false); };
   $("btnInstallUpdate").onclick = installUpdate;
+  $("btnReload").onclick = reloadPanel;
+  $("btnIntroMarkers").onclick = markNames;
+  $("btnIntroClear").onclick = clearNames;
+  $("introCut").onchange = function () { state.config.introCut = this.checked; changed(true); };
+  $("btnReloadBanner").onclick = reloadPanel;
   $("btnUpdateNow").onclick = installUpdate;
   $("btnUpdateLater").onclick = function () {
     if (pending) store("skipVersion", pending.version);

@@ -122,6 +122,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .sug { background: var(--card2); border-radius: 4px; padding: 6px; border-left: 3px solid var(--err); cursor: pointer; }
 .sug.off { opacity: .5; border-left-color: #555; }
 .sug.short { border-left-color: var(--warn); }
+.intro-names { margin: 6px 0; }
+.intro-name { display: grid; grid-template-columns: 64px 1fr 52px; gap: 6px; align-items: center; padding: 3px 0; border-top: 1px solid var(--line); }
+.intro-name .time { cursor: pointer; color: var(--accent); font-variant-numeric: tabular-nums; }
+.intro-name .tag { font-size: 10px; color: var(--muted); text-align: right; }
 .sug-top { display: flex; gap: 6px; align-items: center; }
 .sug-top .time { font-variant-numeric: tabular-nums; }
 .badge { font-size: 10px; padding: 0 6px; border-radius: 8px; background: #3a2a2a; color: #ffb3b3; }

@@ -17,6 +17,7 @@
   <div id="updateBanner" class="update-banner hidden">
     <span id="updateText"></span>
     <button id="btnUpdateNow" class="btn primary small">Update now</button>
+    <button id="btnReloadBanner" class="btn primary small hidden" title="Load the new version now, without restarting Premiere Pro">Reload PodDirector</button>
     <button id="btnUpdateLater" class="btn ghost small">Later</button>
   </div>
 
@@ -148,6 +149,17 @@
       <div id="txStatus" class="muted small"></div>
     </div>
 
+    <div class="card hidden" id="introCard">
+      <div class="card-head"><h2>Introduction <small id="introWhen"></small></h2></div>
+      <p id="introNote" class="muted small"></p>
+      <label class="chip" title="The multicam cut opens on whoever is hosting through the welcome, then goes to the wide while they introduce everyone (where the name tags go)."><input type="checkbox" id="introCut" checked /> Open on the host's solo cam, then the wide for the introductions</label>
+      <div id="introNames" class="intro-names"></div>
+      <div class="actions two">
+        <button id="btnIntroMarkers" class="btn primary" disabled title="A marker at each name, named for the lower third, to drop your name tags on">Add lower-third markers</button>
+        <button id="btnIntroClear" class="btn ghost small">Clear name markers</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-head"><h2>Detection</h2></div>
       <div id="cleanupControls"></div>
@@ -200,6 +212,9 @@
       <div class="actions two">
         <button id="btnCheckUpdates" class="btn">Check for updates</button>
         <button id="btnInstallUpdate" class="btn primary" disabled>Install update</button>
+      </div>
+      <div class="actions two">
+        <button id="btnReload" class="btn ghost small" title="Reload the panel and its Premiere script from disk, e.g. after an update. Your settings are kept.">Reload PodDirector</button>
       </div>
       <div id="updateStatus" class="muted small"></div>
     </div>

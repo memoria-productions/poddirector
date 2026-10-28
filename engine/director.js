@@ -1069,6 +1069,36 @@
     return shots;
   }
 
+  /**
+   * The show's opening, from the transcript: the host's solo cam through the welcome, then the wide while they
+   * introduce everyone (where the lower-third name tags go). intro: { startSec, wideSec, endSec, hostId? }.
+   * The host is hostId, or whoever talks most during the welcome. A solo shot the camera can't give (a follow cam
+   * mid-move or on someone else) is left to the normal cut; manual locks still win.
+   */
+  function applyIntro(shots, intro, speakers, style, ctx) {
+    if (!intro || !(intro.endSec > intro.startSec)) return shots;
+    var fr = ctx.fr, ci = ctx.ci;
+    var a = Math.max(0, Math.round(intro.startSec * fr)), w = Math.round(Math.max(intro.startSec, intro.wideSec) * fr);
+    var b = Math.min(ctx.frames, Math.max(Math.round(intro.endSec * fr), w + Math.round((style.minWideSec || 0) * fr)));
+    if (a >= ctx.frames || b <= a) return shots;
+    var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    var si = -1;
+    speakers.forEach(function (sp, i) { if (sp.id === intro.hostId) si = i; });
+    if (si < 0 && w > a) {
+      var best = 0;
+      ctx.raw.forEach(function (r, i) {
+        var n = 0; for (var t = a; t < w; t++) if (r[t]) n++;
+        if (n > best) { best = n; si = i; }
+      });
+    }
+    if (w > a && si >= 0) {
+      var cams = ci.closeups(si).filter(function (id) { return canShow(id, a, w) && framingOk(ctx, id, a, w, [si]); });
+      if (cams.length) shots = insertShot(shots, { start: a, end: w, cameraId: cams[0], reason: "intro", speakers: [si], onset: true, locked: true });
+    }
+    if (ci.hasWide && b > w) shots = insertShot(shots, { start: w, end: b, cameraId: ci.widest, reason: "intro-wide", speakers: [], onset: false, locked: true });
+    return shots;
+  }
+
   function applyOverrides(shots, overrides, ctx) {
     (overrides || []).forEach(function (o) {
       var a = Math.round(Math.min(o.startSec, o.endSec) * ctx.fr);
@@ -1125,6 +1155,8 @@
     shots = applyMinWide(shots, style, ctx);
     shots = applyCutCap(shots, style, ctx);
     shots = applyRemovals(shots, config.removals, style, ctx);
+    ctx.raw = raw;
+    shots = applyIntro(shots, config.intro, speakers, style, ctx);
     shots = applyOverrides(shots, config.overrides, ctx);
     shots = mergeShots(shots);
 
@@ -1330,7 +1362,8 @@
       return (list || []).map(function (o) { return merge(o, { startSec: o.startSec - a, endSec: o.endSec - a }); })
         .filter(function (o) { return o.endSec > 0 && o.startSec < b - a; });
     };
-    var cfg = merge(config, { overrides: shift(config.overrides), removals: shift(config.removals) });
+    var cfg = merge(config, { overrides: shift(config.overrides), removals: shift(config.removals),
+      intro: config.intro ? merge(config.intro, { startSec: config.intro.startSec - a, wideSec: config.intro.wideSec - a, endSec: config.intro.endSec - a }) : null });
     var framing = {};
     Object.keys(input.framing || {}).forEach(function (k) { framing[k] = shift(input.framing[k]); });
     var r = plan({ durationSec: b - a, hopSec: hop, fps: fps, curves: curves, cameraMotion: motion, framing: framing }, cfg);
@@ -1407,7 +1440,7 @@
   }
 
   return {
-    VERSION: "0.7.0",
+    VERSION: "0.8.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

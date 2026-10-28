@@ -431,6 +431,100 @@
     return res;
   }
 
+  // ---------------------------------------------------- introductions
+
+  // Words that can follow a first name without being a surname ("Paul, Tanya and Martin", "Jessica Abood and…").
+  var NOT_SURNAME = { And: 1, The: 1, Is: 1, With: 1, Here: 1, Today: 1, I: 1, We: 1, Our: 1, My: 1, Your: 1, This: 1, That: 1,
+    So: 1, But: 1, Or: 1, Of: 1, From: 1, To: 1, In: 1, On: 1, At: 1, As: 1, It: 1, He: 1, She: 1, They: 1, Who: 1, Happy: 1, Hello: 1, Hi: 1 };
+  var GUEST_CUE = /\b(joined by|joining us( today)?( is)?|our (special )?guest( today)?( is)?|special guest|with us (today|this week)( is)?|welcome(s)?( back)?)\s*$/i;
+
+  /** Words of a sentence with estimated times (spread evenly over the sentence) and their original spelling. */
+  function timedWords(st) {
+    var raw = st.text.split(/\s+/).filter(function (w) { return normalize(w); });
+    var dur = st.endSec - st.startSec;
+    return raw.map(function (w, i) {
+      return { raw: w.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, ""), norm: normalize(w), sec: st.startSec + dur * (i + 0.5) / raw.length };
+    });
+  }
+  function isCap(w) { return /^[A-Z][a-zA-Z'\-]+$/.test(w || "") && !NOT_SURNAME[w]; }
+
+  /**
+   * The show's introduction: the welcome ("Hello and welcome to … Classical et cetera"), the host ("I'm Jessica
+   * Abood"), and everyone named while they go round the table. Used to open on the host's solo cam, go to the
+   * wide for the introductions, and drop lower-third name markers.
+   *   opts: { showName, names: ["Martin", "Tanya", …] (people on mic; first names are enough), windowSec: 75 }
+   *   -> { welcomeSec, welcomeEndSec, welcomeText, host: {name, sec}|null, names: [{ name, fullName, sec, host, guest }],
+   *        wideSec, endSec } or null
+   */
+  function introduction(segs, opts) {
+    var o = Object.assign({}, DEFAULTS, opts || {});
+    if (!segs || !segs.length) return null;
+    var all = sentenceStream(segs, 0, 0), endT = segs[segs.length - 1].endSec;
+    var welcome = null;
+    for (var k = 0; k < all.length && all[k].startSec < endT * 0.35; k++) {
+      var kind = isIntro(all[k], o);
+      if (kind === "show") { welcome = all[k]; break; }
+      if (kind === "generic" && !welcome) welcome = all[k];
+    }
+    if (!welcome) return null;
+    var idx = all.indexOf(welcome), from = welcome;
+    if (idx > 0 && all[idx - 1].n <= 3 && /^(hello|hi|hey|good (morning|afternoon|evening)|welcome)\b/.test(all[idx - 1].norm)) from = all[idx - 1];
+
+    var windowSec = o.windowSec || 75;
+    var wanted = (o.names || []).map(function (n) { return { first: normalize(String(n).split(/\s+/)[0]), label: String(n).trim() }; })
+      .filter(function (n) { return n.first.length > 1; });
+    var found = {}, list = [], host = null;
+    var words = [];
+    for (var j = idx; j < all.length && all[j].startSec < welcome.startSec + windowSec; j++) words = words.concat(timedWords(all[j]));
+    for (var w = 0; w < words.length; w++) {
+      var cur = words[w], prev2 = w > 1 ? words[w - 2].norm + " " + words[w - 1].norm : "", prev = w > 0 ? words[w - 1].norm : "";
+      var full = function (i) { // "Jessica" + "Abood" when a capitalised surname follows
+        var s = words[i].raw;
+        if (words[i + 1] && isCap(words[i + 1].raw) && !wanted.some(function (n) { return n.first === words[i + 1].norm; })) s += " " + words[i + 1].raw;
+        return s;
+      };
+      // The host introduces themselves: "I'm Jessica Abood", "my name is …", "this is …".
+      if (!host && (prev === "im" || prev === "i'm" || prev2 === "i am" || prev2 === "name is" || prev2 === "this is") && isCap(cur.raw)) {
+        host = { name: full(w), first: cur.norm, sec: cur.sec };
+      }
+      var match = wanted.filter(function (n) { return n.first === cur.norm; })[0];
+      if (match && !found[match.first]) {
+        found[match.first] = true;
+        // A full name set on the speaker ("Martin Cothran") beats what the transcript spelled out.
+        list.push({ name: match.label, fullName: match.label.indexOf(" ") > 0 ? match.label : full(w), sec: Math.round(cur.sec * 100) / 100 });
+        continue;
+      }
+      // A guest introduced by a cue phrase ("joined by Dr. Malcolm Guite", "our guest today is …").
+      if (isCap(cur.raw) && !found[cur.norm] && GUEST_CUE.test(words.slice(Math.max(0, w - 5), w).map(function (x) { return x.raw; }).join(" "))) {
+        var gi = w, name = cur.raw;
+        if (/^(dr|mr|mrs|ms|father|fr|professor|prof)$/i.test(cur.raw) && words[w + 1] && isCap(words[w + 1].raw)) {
+          gi = w + 1; name = cur.raw + (/^(dr|mr|mrs|ms|fr|prof)$/i.test(cur.raw) ? ". " : " ") + words[gi].raw;
+        }
+        if (words[gi + 1] && isCap(words[gi + 1].raw)) name += " " + words[gi + 1].raw;
+        found[words[gi].norm] = true;
+        list.push({ name: name, fullName: name, sec: Math.round(cur.sec * 100) / 100, guest: true });
+      }
+    }
+    // Keep the names said together, starting at the welcome: stop at a gap of more than 30 s between names.
+    list.sort(function (a, b) { return a.sec - b.sec; });
+    var keep = [];
+    list.forEach(function (n) { if (!keep.length || n.sec - keep[keep.length - 1].sec <= 30) keep.push(n); });
+    if (host) {
+      var hostEntry = keep.filter(function (n) { return normalize(n.fullName.split(" ")[0]) === host.first; })[0];
+      if (hostEntry) { hostEntry.host = true; hostEntry.fullName = host.name.length > hostEntry.fullName.length ? host.name : hostEntry.fullName; }
+      else keep.unshift({ name: host.name, fullName: host.name, sec: Math.round(host.sec * 100) / 100, host: true });
+    }
+    var others = keep.filter(function (n) { return !n.host; });
+    var wideSec = others.length ? Math.max(welcome.endSec, others[0].sec - 0.3) : welcome.endSec;
+    // On their own the names come quickly; the wide holds a beat after the last one.
+    var lastName = keep.length ? keep[keep.length - 1].sec : welcome.endSec;
+    return {
+      welcomeSec: round2(from.startSec), welcomeEndSec: round2(welcome.endSec), welcomeText: welcome.text,
+      host: host ? { name: host.name, sec: round2(host.sec) } : null,
+      names: keep, wideSec: round2(Math.min(wideSec, lastName)), endSec: round2(Math.max(lastName + 2.5, wideSec + 4))
+    };
+  }
+
   /** "So the thing about — so the thing about budgets is..." -> cut the first attempt. */
   function falseStarts(segs, o) {
     var res = [];
@@ -515,5 +609,6 @@
     return (h ? h + ":" : "") + (m < 10 && h ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s.toFixed(2);
   }
 
-  return { isSound: isSound, parse: parse, analyze: analyze, assignSpeakers: assignSpeakers, toCsv: toCsv, formatTime: fmt, DEFAULTS: DEFAULTS, CUES: CUES };
+  return { isSound: isSound, parse: parse, analyze: analyze, introduction: introduction, assignSpeakers: assignSpeakers, toCsv: toCsv,
+           formatTime: fmt, DEFAULTS: DEFAULTS, CUES: CUES };
 });

@@ -76,7 +76,7 @@
 
   function transcript() {
     return [
-      { startSec: 3, endSec: 7, text: "Welcome back to the show, everybody." },
+      { startSec: 9, endSec: 17, text: "Hello and welcome to Classical et cetera. I'm Martin, and with me today are Tanya and Jessica." },
       { startSec: 41.2, endSec: 44, text: "So the thing about the new curriculum is that it" },
       { startSec: 44.3, endSec: 46, text: "sorry, let me start that over." },
       { startSec: 46.8, endSec: 52, text: "So the thing about the new curriculum is that it actually starts with Latin." },
