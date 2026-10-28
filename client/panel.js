@@ -591,6 +591,8 @@
       if (cm.moving) role += " \u00B7 movement check";
       var isBottom = cm.enabled !== false && !state.config.cameras.some(function (o) { return o !== cm && o.enabled !== false && o.videoTrack < cm.videoTrack; });
       if (isBottom && state.config.cameras.length > 1 && load("layered", true) !== false) role += " \u00B7 bottom, kept whole";
+      var vt = state.seq && state.seq.videoTracks.filter(function (v) { return v.index === cm.videoTrack; })[0];
+      if (vt && vt.hidden && cm.enabled !== false) role += " \u00B7 eye off in the sequence (the cut turns it on)";
       row.appendChild(el("div", { class: "row-main" }, [
         name,
         select(trackOptions("video"), cm.videoTrack, function (v) { cm.videoTrack = +v; changed(); }),
@@ -1274,7 +1276,18 @@
       status("Switching cameras\u2026", "", 0.93);
       return callHost("applyEnables", [JSON.stringify(payload.tracks ? { sequenceID: seqId, tracks: payload.tracks }
         : { sequenceID: seqId, cameraTracks: tracks, shots: payload.shots })]);
+    }).then(function (r) {
+      // A camera track with its eye off shows nothing however its clips are switched: turn them all on.
+      return callHost("showTracks", [JSON.stringify({ sequenceID: seqId, tracks: tracks })]).then(function (s) {
+        r.shown = s.shown;
+        if (s.shown.length) log("Turned on track output (the eye) for " + s.shown.map(function (t) { return "V" + (t + 1); }).join(", "));
+        return r;
+      }, function (e) { log("Couldn't check track output: " + e.message); return r; });
     });
+  }
+
+  function shownNote(r) {
+    return r && r.shown && r.shown.length ? "; turned on " + r.shown.map(function (t) { return "V" + (t + 1); }).join(", ") + ", which had its eye off" : "";
   }
 
   function currentPayload() {
@@ -1292,7 +1305,7 @@
     }).then(function (r) {
       rememberCut(orig, newSeq, payload, state.result.stats, true);
       renderRecut();
-      status("Done: \u201C" + newSeq.name + "\u201D has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched). Your original is untouched.", "ok", 1);
+      status("Done: \u201C" + newSeq.name + "\u201D has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched" + shownNote(r) + "). Your original is untouched.", "ok", 1);
     });
   });
 
@@ -1309,7 +1322,7 @@
       return writeCut(rec.id, payload, "Recutting").then(function (res) {
         rememberCut(orig, { sequenceID: rec.id, name: r.name }, payload, state.result.stats, false);
         renderRecut();
-        status("Recut \u201C" + r.name + "\u201D: " + state.result.stats.cuts + " cuts (" + res.toggled + " clips switched). Undo recut puts the previous version back.", "ok", 1);
+        status("Recut \u201C" + r.name + "\u201D: " + state.result.stats.cuts + " cuts (" + res.toggled + " clips switched" + shownNote(res) + "). Undo recut puts the previous version back.", "ok", 1);
       });
     });
   });

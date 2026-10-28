@@ -94,7 +94,9 @@ var PD = (function () {
         // Clip list for camera-motion analysis (capped: camera tracks rarely have more).
         if (vclips.length < 400) vclips.push({ startSec: sec(clip.start), endSec: sec(clip.end), inPointSec: sec(clip.inPoint), mediaPath: mp, speed: speed });
       }
-      info.videoTracks.push({ index: i, name: track.name || ("V" + (i + 1)), clipCount: n, firstClip: first, endSec: endMax, mediaPaths: media, clips: vclips });
+      var hidden = false;
+      try { hidden = track.isMuted(); } catch (e6) { hidden = false; } // a video track's "mute" is its eye (track output)
+      info.videoTracks.push({ index: i, name: track.name || ("V" + (i + 1)), clipCount: n, firstClip: first, endSec: endMax, mediaPaths: media, clips: vclips, hidden: hidden });
     }
     return ok(info);
   }
@@ -281,6 +283,21 @@ var PD = (function () {
     return ok({ toggled: toggled });
   }
 
+  /** json: { sequenceID, tracks: [index] } — turn track output (the eye) on for these video tracks. */
+  function showTracks(json) {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var p = JSON.parse(json);
+    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodDirector copy is not the active sequence.");
+    var shown = [];
+    for (var i = 0; i < p.tracks.length; i++) {
+      var vt = seq.videoTracks[p.tracks[i]];
+      if (!vt) continue;
+      try { if (vt.isMuted()) { vt.setMute(0); shown.push(p.tracks[i]); } } catch (e) { /* older Premiere: leave it */ }
+    }
+    return ok({ shown: shown });
+  }
+
   /** Open a sequence by ID (used to recut an earlier PodDirector copy). */
   function openSequenceById(id) {
     for (var i = 0; i < app.project.sequences.numSequences; i++) {
@@ -295,5 +312,5 @@ var PD = (function () {
 
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
-           razorTrack: razorTrack, applyEnables: applyEnables, openSequenceById: openSequenceById, setInOut: setInOut };
+           razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, openSequenceById: openSequenceById, setInOut: setInOut };
 })();

@@ -22,6 +22,8 @@ function fakePremiere(durationSec, nCams) {
     return t;
   }
   const video = []; for (let i = 0; i < nCams; i++) video.push(makeTrack("V" + (i + 1), "cam" + i + ".mp4"));
+  // A video track's "mute" is its eye (track output).
+  video.forEach((v) => { v._muted = false; v.isMuted = () => v._muted; v.setMute = (m) => { v._muted = !!m; }; });
   const audio = [makeTrack("Host", "host.wav"), makeTrack("Guest", "guest.wav")];
   audio.forEach((a) => { a.isMuted = () => false; });
   const markers = [];
@@ -181,6 +183,22 @@ test("layered cut: the bottom camera is never razored, the cameras above only wh
     const want = cameras.find((c) => c.id === plan.shots.find((s) => s.startSec <= t && s.endSec > t).cameraId).videoTrack;
     assert.equal(visible(fake, t), want, "at " + t + "s");
   }
+});
+
+test("a camera track with its eye off is reported on scan and turned back on after the cut", () => {
+  const fake = fakePremiere(30, 2);
+  fake.video[1]._muted = true; // V2's track output switched off in the original
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const call = (expr) => JSON.parse(vm.runInContext(expr, fake.ctx));
+  const info = call("PD.getSequenceInfo()");
+  assert.deepEqual(info.videoTracks.map((v) => v.hidden), [false, true]);
+  const dup = call('PD.duplicateActive("seq-1", " - PD")');
+  const r = call("PD.showTracks(" + JSON.stringify(JSON.stringify({ sequenceID: dup.sequenceID, tracks: [0, 1] })) + ")");
+  assert.ok(r.ok, r.error);
+  assert.deepEqual(r.shown, [1]);
+  assert.equal(fake.video[1].isMuted(), false);
+  assert.deepEqual(call("PD.showTracks(" + JSON.stringify(JSON.stringify({ sequenceID: dup.sequenceID, tracks: [0, 1] })) + ")").shown, [], "nothing to do the second time");
 });
 
 test("layered payload: with three cameras the middle one isn't cut while the top one covers it", () => {
