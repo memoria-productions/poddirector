@@ -52,7 +52,7 @@ Tips:
    - A person with two close-up cameras gets **angle rotation** between them.
    - **Follows speaker:** for a camera whose operator re-frames on whoever is talking. It counts as a close-up of every speaker, but never as a group shot or a listener reaction.
    - **Check for movement:** turn this on for a dolly, slider, gimbal, or handheld camera. PodDirector reads its picture and only cuts to it when it's steady (section 4, *Moving cameras*). Leave it off for locked-off cameras like a static wide: that skips the video analysis for them, and they're never held back.
-5. **Analyze** range: set **In and Out marks** on the sequence around the episode itself, and PodDirector analyzes and cuts only between them. The intro, outro and anything else outside the marks are left exactly as they are (the preview greys them out). Choose **Whole sequence** in the menu above the Analyze button to ignore the marks.
+5. **Analyze** range: set **In and Out marks** on the sequence around the episode itself, and PodDirector cuts only between them. The intro, outro and anything else outside the marks are left exactly as they are (the preview greys them out). Choose **Whole sequence** in the menu above the Analyze button to ignore the marks. The marks are followed live: Analyze reads the whole sequence once, so when you move In or Out in Premiere, the range, preview and planned cut update by themselves within a second. There's no need to scan or analyze again.
 6. **Analyze waveforms** reads the mic audio. It also checks any moving cameras for movement, which decodes their video at low resolution: allow a few minutes per hour of footage the first time. The first run takes a little while. After that the results are cached, so changing settings is instant.
 7. **Tune the style** (section 4). The preview strip updates live.
    - **Click** the preview to move Premiere's playhead to that moment.
@@ -237,6 +237,8 @@ Once the trial works, **Build as multicam** applies the whole planned cut to a r
 5. Afterwards it counts the pieces on the multicam track and tells you whether every cut landed. If it stopped part-way, or some cuts were missed, **Resume** carries on from where it stopped. Raise **Pause** under Settings first if cuts were being missed.
 
 Each keypress is one undo step in Premiere. Run it on the duplicate, so your stacked-track sequence stays as it was.
+
+If the multicam clip doesn't reach somewhere the plan does, there's no footage there to switch. This is common at the very end, where the audio or the Out mark runs a few seconds past the cameras. The build skips those stretches and says where. A gap in the middle is skipped too, and the angle is set again where the footage resumes.
 
 **Only between the In and Out marks** (under the button) builds just part of it: set In and Out marks on the multicam sequence, for example around a short test section, or a stretch you want to redo. PodDirector first adds edit points at In and Out. It then sets the angle the plan has at In, and types only the angle changes in between. Since Cut to Camera switches up to the next edit point, nothing after Out changes, including any angles you set by hand.
 

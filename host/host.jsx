@@ -101,10 +101,23 @@ var PD = (function () {
     return ok(info);
   }
 
+  /** The sequence's In/Out marks in seconds; null when a mark isn't set (Premiere reads unset marks as 0 / the end). */
+  function marksOf(seq) {
+    var m = { inSec: null, outSec: null };
+    try {
+      var inS = parseFloat(seq.getInPoint()), outS = parseFloat(seq.getOutPoint()), endS = sec(seq.end);
+      if (isFinite(inS) && inS > 0.01 && inS < endS) m.inSec = inS;
+      if (isFinite(outS) && outS > 0 && outS < endS - 0.01 && outS > (m.inSec || 0)) m.outSec = outS;
+    } catch (e) { /* older Premiere: no marks */ }
+    return m;
+  }
+
+  /** Playhead and In/Out marks of the active sequence (polled by the panel to follow both live). */
   function getPlayhead() {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
-    return ok({ sec: sec(seq.getPlayerPosition()), sequenceID: seq.sequenceID });
+    var m = marksOf(seq);
+    return ok({ sec: sec(seq.getPlayerPosition()), sequenceID: seq.sequenceID, inSec: m.inSec, outSec: m.outSec });
   }
 
   function setPlayhead(s) {
@@ -346,13 +359,9 @@ var PD = (function () {
     }
     var fps = 30;
     try { fps = Math.round(TPS / parseFloat(seq.timebase) * 1000) / 1000; } catch (e3) { fps = 30; }
-    var r = { sequenceID: seq.sequenceID, name: seq.name, fps: fps, inSec: null, outSec: null };
-    try {
-      // The sequence's own In/Out marks (for building only part of it); unset marks read as 0 / the end.
-      var inS = parseFloat(seq.getInPoint()), outS = parseFloat(seq.getOutPoint()), endS = sec(seq.end);
-      if (isFinite(inS) && inS > 0.01) r.inSec = inS;
-      if (isFinite(outS) && outS > 0 && outS < endS - 0.01 && outS > (r.inSec || 0)) r.outSec = outS;
-    } catch (eIO) { /* older Premiere */ }
+    // The sequence's own In/Out marks, for building only part of it.
+    var mk = marksOf(seq);
+    var r = { sequenceID: seq.sequenceID, name: seq.name, fps: fps, inSec: mk.inSec, outSec: mk.outSec };
     if (best) for (var k in best) if (best.hasOwnProperty(k)) r[k] = best[k];
     return ok(r);
   }

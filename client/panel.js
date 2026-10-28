@@ -253,9 +253,10 @@
     return out;
   }
 
-  function speakerTrack(sp) {
+  /** A speaker's mic as clips with their channel. full: the whole sequence (analysis); otherwise trimmed to the range. */
+  function speakerTrack(sp, full) {
     var info = state.seq, t = info.audioTracks[sp.audioTrack];
-    return trimToRange({ index: t.index, name: t.name, clips: t.clips.map(function (c) {
+    return (full ? function (x) { return x; } : trimToRange)({ index: t.index, name: t.name, clips: t.clips.map(function (c) {
       var cc = copy(c), auto = clipChannel(info, sp.audioTrack, c);
       if (sp.channelManual) cc.channel = (sp.channel === null || sp.channel === undefined) ? null : (auto === null ? null : sp.channel);
       else cc.channel = auto;
@@ -912,8 +913,11 @@
   }
 
   // ------------------------------------------------------------ analyze
+  // Waveforms and camera movement are analyzed for the whole sequence once; the In/Out range is applied when
+  // planning (planRange slices them), so moving the marks re-plans instantly without analyzing again.
   function rangeKey() { var r = currentRange(); return r ? "@" + r.a.toFixed(2) + "-" + r.b.toFixed(2) : ""; }
-  function curveKey(sp) { return sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel) + (sp.channelManual ? "m" : "a") + rangeKey(); }
+  function curveKey(sp) { return sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel) + (sp.channelManual ? "m" : "a"); }
+  function motionKey(cam) { return "v:" + cam.videoTrack; }
 
   var analyze = guard(function () {
     if (!state.seq) throw new Error("Scan a sequence first.");
@@ -925,7 +929,7 @@
         var dk = sp.audioTrack + ":" + (sp.channel === null || sp.channel === undefined ? "mix" : sp.channel) + (sp.channelManual ? "m" : "a");
         state.curves[curveKey(sp)] = demoCurves[dk];
       });
-      state.config.cameras.forEach(function (c) { if (c.moving) state.motion["v:" + c.videoTrack + rangeKey()] = window.PD_DEMO.motion(state.seq, c.videoTrack); });
+      state.config.cameras.forEach(function (c) { if (c.moving) state.motion[motionKey(c)] = window.PD_DEMO.motion(state.seq, c.videoTrack); });
       replan(); renderCameras(); status("Demo analysis ready.", "ok", 1); return;
     }
     if (!state.tools.ffmpeg) throw new Error("ffmpeg is not available. See Settings.");
@@ -935,7 +939,7 @@
     var t0 = Date.now();
     status("Reading waveforms (0/" + total + ")…", "", 0.02);
     Object.keys(keys).forEach(function (k) {
-      var sp = keys[k], track = speakerTrack(sp);
+      var sp = keys[k], track = speakerTrack(sp, true);
       jobs.push(function () {
         return A.analyzeTrack(track, dur, { hopSec: HOP, channel: sp.channel, onWarning: function (m) { log("Note: " + m); }, onProgress: function (i, n) {
           status("Reading " + track.name + " clip " + i + "/" + n + " (" + done + "/" + total + " tracks done)…", "", (done + i / n) / total);
@@ -955,15 +959,15 @@
 
   /** Camera-movement check for cameras marked as moving (decodes their video at low resolution). */
   function analyzeMotion() {
-    var cams = state.config.cameras.filter(function (c) { return c.moving && c.enabled !== false && !state.motion["v:" + c.videoTrack + rangeKey()]; });
+    var cams = state.config.cameras.filter(function (c) { return c.moving && c.enabled !== false && !state.motion[motionKey(c)]; });
     return cams.reduce(function (p, c, i) {
       return p.then(function () {
-        var track = trimToRange(state.seq.videoTracks[c.videoTrack]), t0 = Date.now();
+        var track = state.seq.videoTracks[c.videoTrack], t0 = Date.now();
         if (!track || !track.clips) return;
         return window.PodMotion.analyzeTrack(track, state.seq.durationSec, { ffmpegPath: state.tools.ffmpeg, onProgress: function (f) {
           status("Checking " + c.name + " for camera movement\u2026 " + Math.round(f * 100) + "%" + (cams.length > 1 ? " (" + (i + 1) + "/" + cams.length + ")" : ""), "", f);
         } }).then(function (m) {
-          state.motion["v:" + c.videoTrack + rangeKey()] = m;
+          state.motion[motionKey(c)] = m;
           log("Camera movement for " + c.name + " analyzed in " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
         });
       });
@@ -972,7 +976,7 @@
 
   function cameraMotionInput() {
     var out = {};
-    state.config.cameras.forEach(function (c) { var m = state.motion["v:" + c.videoTrack + rangeKey()]; if (c.moving && m) out[c.id] = m; });
+    state.config.cameras.forEach(function (c) { var m = state.motion[motionKey(c)]; if (c.moving && m) out[c.id] = m; });
     return out;
   }
 
@@ -1010,7 +1014,7 @@
     if (!window.PodFraming || !result) return out;
     state.config.cameras.forEach(function (c) {
       if (!c.follows || !c.moving || c.enabled === false) return;
-      var m = state.motion["v:" + c.videoTrack + rangeKey()];
+      var m = state.motion[motionKey(c)];
       if (!m || !m.thumbs) return;
       var key = framingKey(c);
       if (!state.framing[key]) {
@@ -1042,7 +1046,7 @@
     return cv;
   }
   function renderFramingFor(cm, row) {
-    var m = state.motion["v:" + cm.videoTrack + rangeKey()], fr = state.framing[framingKey(cm)];
+    var m = state.motion[motionKey(cm)], fr = state.framing[framingKey(cm)];
     if (!cm.follows || !m || !fr) return;
     var box = el("div", { class: "framing" }, [el("div", { class: "small", html: "<b>Who's in the shot</b> <span class=\"muted\">\u2014 guessed from who was talking; fix any that are wrong</span>" })]);
     var names = framingNames(cm, fr);
@@ -1570,7 +1574,7 @@
       if (isStart) state.seq.inSec = sec; else state.seq.outSec = sec;
       state.config.range = "inout"; saveConfig(); renderRangeSelect();
       state.result = null; replan();
-      status((isStart ? "In" : "Out") + " point set at " + fmt(sec) + ". Click Analyze waveforms to cut only the show.", "", 0);
+      status((isStart ? "In" : "Out") + " point set at " + fmt(sec) + (curvesReady() ? ": re-planned the show." : ". Click Analyze waveforms to cut only the show."), curvesReady() ? "ok" : "", 0);
     }
     if (!inPremiere) { done(); return; }
     return callHost("setInOut", [JSON.stringify(arg)]).then(done);
@@ -1896,10 +1900,28 @@
         startSec = lo; endSec = hi;
         cuts = D.toMulticamCuts(state.result, cams, { startSec: lo, endSec: hi });
       }
+      // Stretches with no multicam footage (the audio or the Out mark often runs a little past the cameras):
+      // trim them off the ends; inside, skip their cuts and set the angle again where the footage resumes.
       var gaps = r.gaps.filter(function (g) { return g[1] > startSec + 0.05 && g[0] < endSec - 0.05; });
       if (gaps.length) {
-        throw new Error("The multicam clip on V" + (r.track + 1) + " doesn't cover the whole " + (onlyInOut ? "In/Out range" : "cut") + ": nothing multicam at " +
-          gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ") + ".");
+        var skipped = gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ");
+        gaps.forEach(function (g) {
+          if (g[0] <= startSec + 0.05) startSec = g[1];
+          else if (g[1] >= endSec - 0.05) endSec = g[0];
+        });
+        if (endSec - startSec < 0.5) throw new Error("There's no multicam footage on V" + (r.track + 1) + " in the stretch to build.");
+        var inGap = function (t) { return gaps.some(function (g) { return t >= g[0] - 0.01 && t < g[1] - 0.01; }); };
+        var kept = D.toMulticamCuts(state.result, cams, { startSec: startSec, endSec: endSec }).filter(function (c) { return !inGap(c.sec); });
+        gaps.forEach(function (g) {
+          if (g[0] <= startSec || g[1] >= endSec) return;
+          var resume = D.toMulticamCuts(state.result, cams, { startSec: g[1], endSec: g[1] + 0.05 })[0];
+          if (resume) { resume.afterGap = true; kept.push(resume); }
+        });
+        kept.sort(function (a, b) { return a.sec - b.sec; });
+        // A new clip starts after a gap, on whatever angle it had: always set it there.
+        cuts = kept.filter(function (c, i) { return i === 0 || c.afterGap || c.camera !== kept[i - 1].camera; });
+        step("no multicam footage at " + skipped + ": skipped; building " + fmt(startSec) + "–" + fmt(endSec));
+        say("No multicam footage at " + skipped + ", so that part is skipped.");
       }
       var angles = []; cuts.forEach(function (c) { if (angles.indexOf(c.camera) < 0) angles.push(c.camera); });
       keys = keysFor(angles.sort());
@@ -1999,7 +2021,7 @@
   $("setupSelect").onchange = function () { chooseSetup(this.value); };
   $("rangeSelect").onchange = function () {
     state.config.range = this.value; saveConfig(); state.result = null; replan();
-    status(curvesReady() ? "Range changed." : "Range changed \u2014 click Analyze waveforms.", "", 0);
+    status(curvesReady() ? "Range changed: re-planned." : "Range changed \u2014 click Analyze waveforms.", "", 0);
   };
   $("btnSaveSetup").onclick = saveSetup;
   $("btnDeleteSetup").onclick = deleteSetup;
@@ -2044,13 +2066,33 @@
   };
   $("importFile").onchange = function () { if (this.files[0]) importSettings(this.files[0]); this.value = ""; };
 
-  // Follow Premiere's playhead while the panel is idle.
+  // Follow Premiere's playhead and the sequence's In/Out marks while the panel is idle.
   setInterval(function () {
-    if (!inPremiere || state.busy || !state.result || document.hidden) return;
+    if (!inPremiere || state.busy || !state.seq || document.hidden) return;
     callHost("getPlayhead").then(function (r) {
-      if (state.seq && r.sequenceID === state.seq.sequenceID && Math.abs((viz.playhead || -1) - r.sec) > 0.05) viz.setPlayhead(r.sec);
+      if (r.sequenceID !== state.seq.sequenceID) return;
+      if (state.result && Math.abs((viz.playhead || -1) - r.sec) > 0.05) viz.setPlayhead(r.sec);
+      followMarks(r.inSec, r.outSec);
     }).catch(function () { /* sequence closed */ });
   }, 500);
+
+  /**
+   * The In/Out marks moved in Premiere: take the new range and re-plan straight away. The waveforms cover the
+   * whole sequence, so nothing needs analyzing again.
+   */
+  function followMarks(inSec, outSec) {
+    var q = state.seq, same = function (a, b) { return a === b || (a != null && b != null && Math.abs(a - b) < 0.02); };
+    if (same(q.inSec, inSec) && same(q.outSec, outSec)) return;
+    q.inSec = inSec; q.outSec = outSec;
+    renderRangeSelect();
+    var r = currentRange();
+    log("In/Out marks moved: " + (r ? fmt(r.a) + "–" + fmt(r.b) : "none (whole sequence)"));
+    renderShortWides();
+    if (state.result || curvesReady()) {
+      debounce("plan", replan, 150);
+      status("In/Out moved — re-planned " + (r ? fmt(r.a) + "–" + fmt(r.b) : "the whole sequence") + ".", "ok");
+    }
+  }
 
   $("verInstalled").textContent = D.VERSION;
   $("updateFolder").value = load("updateFolder", "");

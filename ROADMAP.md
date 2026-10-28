@@ -61,6 +61,11 @@
 
 - **Build as multicam (experimental):** applies the planned cut to a Multi-Camera nest by pressing Cut to Camera at each angle change (angle = the camera's original track), with progress, Stop, Resume, and a count of the pieces afterwards to check every cut landed. v0.9.1: an option to build only between the multicam sequence's In and Out marks.
 
+## v0.10 (added)
+
+- **In/Out followed live:** waveforms and camera movement are analyzed for the whole sequence once; moving the In/Out marks in Premiere re-plans the preview and cut straight away.
+- **Build as multicam skips uncovered stretches** (no multicam footage at the ends or in a gap) instead of refusing.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis
