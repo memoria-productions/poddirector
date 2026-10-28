@@ -215,6 +215,19 @@ Add names and jargon under Settings → *Vocabulary hint* to improve transcripti
 
 ---
 
+### Multicam by keystrokes (experimental)
+
+Premiere has no script command to switch a multicam angle, but its **Cut to Camera** shortcuts do it: with the playhead parked on a multicam clip, Cut to Camera N cuts there and switches to camera N. **Settings → Multicam by keystrokes** tests whether PodDirector can drive that on your machine.
+
+1. It shows the shortcuts it found in your keyboard shortcuts file (Ctrl+1 and Ctrl+2 by default). Any letter, digit or symbol key, with any modifiers, works. Arrow and function keys can't be typed yet.
+2. Open a sequence with a multicam clip on it (a duplicate is safest) and park the playhead where the trial should start.
+3. Click **Run trial**, then click once in the Timeline during the five-second countdown. Don't touch the mouse or keyboard until it's done. If another window comes to the front, it stops.
+4. It makes the set number of cuts, a few seconds apart, alternating camera 2 and camera 1, then puts the playhead back. The times are in the Log, so you can check each cut landed.
+
+**Pause** is the wait before and after each keypress; raise it if cuts are missed.
+
+---
+
 ## 6. Updating
 
 PodDirector checks for a newer version when the panel opens (at most twice a day). When one is available, a blue bar at the top offers **Update now**, which downloads and installs it. You can also check by hand under **Settings → Updates**.

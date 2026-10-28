@@ -55,6 +55,8 @@
 
 - **Hidden camera tracks (v0.8.1):** Build and Recut turn on track output (the eye) for the camera tracks they cut; the scan notes hidden ones.
 
+- **Multicam by keystrokes, trial (v0.8.2):** reads the Cut to Camera shortcuts from Premiere's .kys file and presses them on a multicam clip (Settings > Multicam by keystrokes), as a first test of cutting real multicam sequences.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

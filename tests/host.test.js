@@ -201,6 +201,18 @@ test("a camera track with its eye off is reported on scan and turned back on aft
   assert.deepEqual(call("PD.showTracks(" + JSON.stringify(JSON.stringify({ sequenceID: dup.sequenceID, tracks: [0, 1] })) + ")").shown, [], "nothing to do the second time");
 });
 
+test("multicamAtPlayhead finds a multicam clip under the playhead (and says when there isn't one)", () => {
+  const fake = fakePremiere(30, 2);
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const call = (expr) => JSON.parse(vm.runInContext(expr, fake.ctx));
+  let r = call("PD.multicamAtPlayhead()");
+  assert.ok(r.ok && r.multicam === null && r.fps === 30);
+  fake.video[1]._clips[0].projectItem.isMulticamClip = () => true;
+  r = call("PD.multicamAtPlayhead()");
+  assert.deepEqual(r.multicam, { track: 1, name: "cam1.mp4", startSec: 0, endSec: 30 });
+});
+
 test("layered payload: with three cameras the middle one isn't cut while the top one covers it", () => {
   const cams = [{ id: "w", videoTrack: 0 }, { id: "a", videoTrack: 1 }, { id: "b", videoTrack: 2 }];
   const shot = (a, b, c) => ({ startSec: a, endSec: b, cameraId: c });

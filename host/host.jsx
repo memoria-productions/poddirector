@@ -283,6 +283,29 @@ var PD = (function () {
     return ok({ toggled: toggled });
   }
 
+  /**
+   * For the keystroke trial: is there a multicam clip under the playhead in the active sequence?
+   * -> { sequenceID, name, playheadSec, fps, multicam: { track, name, startSec, endSec } | null }
+   */
+  function multicamAtPlayhead() {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var at = sec(seq.getPlayerPosition()), found = null;
+    for (var i = 0; i < seq.videoTracks.numTracks && !found; i++) {
+      var vt = seq.videoTracks[i];
+      for (var c = 0; c < vt.clips.numItems; c++) {
+        var clip = vt.clips[c];
+        if (sec(clip.start) > at || sec(clip.end) <= at) continue;
+        var mc = false;
+        try { mc = !!(clip.projectItem && clip.projectItem.isMulticamClip && clip.projectItem.isMulticamClip()); } catch (e) { mc = false; }
+        if (mc) { found = { track: i, name: clip.name, startSec: sec(clip.start), endSec: sec(clip.end) }; break; }
+      }
+    }
+    var fps = 30;
+    try { fps = Math.round(TPS / parseFloat(seq.timebase) * 1000) / 1000; } catch (e2) { fps = 30; }
+    return ok({ sequenceID: seq.sequenceID, name: seq.name, playheadSec: at, fps: fps, multicam: found });
+  }
+
   /** json: { sequenceID, tracks: [index] } — turn track output (the eye) on for these video tracks. */
   function showTracks(json) {
     var seq = seqOrFail();
@@ -312,5 +335,5 @@ var PD = (function () {
 
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
-           razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, openSequenceById: openSequenceById, setInOut: setInOut };
+           razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, multicamAtPlayhead: multicamAtPlayhead, openSequenceById: openSequenceById, setInOut: setInOut };
 })();

@@ -122,6 +122,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .sug { background: var(--card2); border-radius: 4px; padding: 6px; border-left: 3px solid var(--err); cursor: pointer; }
 .sug.off { opacity: .5; border-left-color: #555; }
 .sug.short { border-left-color: var(--warn); }
+.kbd-opts { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0; color: var(--muted); }
+.kbd-opts input { width: 56px; }
 .intro-names { margin: 6px 0; }
 .intro-name { display: grid; grid-template-columns: 64px 1fr 52px; gap: 6px; align-items: center; padding: 3px 0; border-top: 1px solid var(--line); }
 .intro-name .time { cursor: pointer; color: var(--accent); font-variant-numeric: tabular-nums; }
