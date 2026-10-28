@@ -37,6 +37,17 @@
 
 - **Layered cut:** the bottom camera (the wide) stays whole and enabled; only the cameras above it are razored, where they switch. About half the edits with two cameras, and recut cleans up older full cuts.
 
+## v0.7 (added)
+
+- **Simpler cutting style:** the main controls up front (mode, Max cuts / min, Minimum close-up, Minimum wide) and everything else under a collapsible **Advanced** section.
+- **Mic confidence:** a collapsible meter per speaker under the preview (level, bleed, borderline and possibly missed speech, weak stretches), with tips.
+- **The bottom camera is the wide:** a scan sets it up as the wide, and it's always kept whole. The switch moved to Advanced → Timeline.
+- **Content cut warning:** after a scan, flags sections between content cuts in the wide's footage that are shorter than the minimum, under Minimum wide and on the Cleanup tab.
+- **Static cameras:** a Static option per camera (works alongside Check for movement).
+- **Modes:** new Rapid cutting (once cameras are marked Static, warns if anyone lacks a static close-up) and Interview; presets renamed as modes, each with a description.
+- **Close-ups / wide slider:** leans the whole cut toward the speaker close-ups or the static wide (some turns play on the wide).
+- **Feature slider per person** (replaces Priority): more screen time for a special guest.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

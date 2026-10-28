@@ -45,7 +45,7 @@ Tips:
    - **1 / 2 / 3 / 4+ subjects** takes that many VOX tracks and switches the cutting style to one tuned for that many people.
    - **Save as…** stores the current speakers (names, tracks, per-speaker settings), cameras, and style as a named setup, such as "Classical et cetera". Pick it from the list on any episode. Tracks are matched by name, so VOX1 is always Martin. Once saved, a setup is **applied automatically** to new sequences whose track names match. The trash icon next to a saved setup deletes it.
 3. **Speakers:** name each mic and check its track and channel. **+ Speaker** adds one, the trash icon next to ⚙ removes one (after you confirm), and ⚙ opens that speaker's settings.
-4. **Cameras:** for each camera, tick the people it shows. The trash icon removes a camera.
+4. **Cameras:** for each camera, tick the people it shows. The trash icon removes a camera. Tick **Static** for a camera that stays on its shot with no operator, such as a close-up locked on one person; it turns off **Follows speaker**. **Check for movement** can stay on alongside it when the shot itself moves (a slider or a slow push-in).
    - One person ticked = that person's **close-up**.
    - Everyone ticked = the **wide** shot.
    - Two people ticked = a **two-shot**, used when exactly those two talk over each other.
@@ -59,32 +59,49 @@ Tips:
    - **Drag** across a range, then pick a camera to **lock** it there. "Auto" unlocks it.
 8. **Preview as markers** drops a colored marker at every cut, so you can scrub through in Premiere before committing.
 9. **Build cut on a copy** duplicates your sequence as "… - PodDirector", razors the camera tracks at every cut, and enables the right camera for each shot. **Your original sequence is never changed.**
-   - By default the **bottom camera track** (V1, usually the static wide) is left whole and enabled: Premiere shows the top-most enabled clip, so the wide shows through wherever the cameras above it are switched off. Only the cameras above it are razored, and only where they actually switch on or off. With a wide on V1 and the solo cam on V2, that's one track instead of two and far fewer edits. Keep your wide on the lowest camera track. Untick **Leave the bottom camera whole** (Cameras card) to go back to cutting every camera.
+   - The **bottom camera track** (V1) is always the wide, and it's left whole and enabled: Premiere shows the top-most enabled clip, so the wide shows through wherever the cameras above it are switched off. Only the cameras above it are razored, and only where they actually switch on or off. Content cuts already in the footage stay as they are. With a wide on V1 and the solo cam on V2, that's one track instead of two and far fewer edits. **Scan sequence** sets up the bottom camera as the wide, and its camera row says *bottom, kept whole*. As a safety check, the Cameras card shows a warning if V1 isn't the static wide: V1 is empty, no camera is set to V1, or the V1 camera doesn't show everyone, follows the speaker, or has Check for movement on. If you see it, check the sequence and put a static wide camera on V1. The switch, **Leave the bottom camera whole**, is under Cutting style → Advanced → **Timeline**; leave it on. Turning it off razors every camera track at every cut, including the wide.
 10. **Recut** to try a different style or fix a few shots. Adjust the preview, then click **Recut "… - PodDirector"**. This changes the same copy in place instead of making a new one, so if you've already nested that copy into your master timeline, the nest picks up the new cut automatically. Old edit points stay behind as invisible through-edits. **Undo recut** puts the previous version back (the last 5 are kept). Recut overwrites any cameras you switched by hand in that copy, so lock those shots in the preview first (drag across them and pick a camera).
 
 ---
 
 ## 4. Tuning the style
 
-Start with a preset, then adjust from there. Controls you've changed from the preset turn blue. Click **Save** to store your own preset.
+The **Cutting style** card shows only the few controls you'll usually touch: a mode, the close-ups/wide slider, **Max cuts / min**, **Minimum close-up**, **Minimum wide**, and a **Feature** slider for each person. Everything else is under **Advanced**, which stays folded until you open it. If you've changed anything in there, the Advanced heading says how many settings, and those groups open by themselves. Controls you've changed from the mode turn blue. Click **Save** to store your own preset.
 
-| Preset | Good for |
+### Mode
+
+Pick the mode closest to the show; it sets every setting at once. The line under it explains what it does.
+
+| Mode | Good for |
 |---|---|
-| **Calm** | Interviews and long-form talks. Few cuts, long shots, ignores small reactions. |
-| **Balanced** | Most conversational podcasts. |
-| **Lively** | Banter, comedy, and three or more people. Quick switching and lots of reaction shots. |
-| **Social clips** | Fast-paced shorts. |
-| **Host focus** | Stays on whoever is talking: no wides on pauses, no cutaways. |
+| **Balanced discussion** | Most conversational podcasts (the default). |
+| **Calm discussion** | Long, unhurried talks. Long shots, ignores small reactions, leans toward the wide. |
+| **Lively discussion** | Banter and back-and-forth. Quick switching and lots of reaction shots. |
+| **Rapid cutting** | Cuts straight to whoever speaks or reacts. Works best with a static close-up camera on each person. Once any camera is ticked **Static**, the panel warns you about anyone who has no static camera showing just them. |
+| **Interview** | A host asks, a guest answers at length. Holds on the answer and cuts to the host listening now and then. Raise the guest's **Feature** slider. |
+| **Stay on the speaker** | Only cuts when the speaker changes: no wides on pauses, no cutaways, no reactions. |
+| **Three people / Roundtable (4+)** | Tuned for bigger tables; Roundtable uses more wides. |
+| **Solo / monologue** | One person talking. |
+| **Social clips** | Very fast cutting for shorts. |
 
-### Switching
+### The main sliders
+
+- **Close-ups / wide:** leans the whole cut one way. Toward **wide**, some speaker turns play on the static wide (they break to the close-up if they run long), overlaps and pauses reach the wide sooner, and wides stay up longer. Toward **close-ups**, overlaps and pauses stay on the person talking; all the way over, two people talking at once stays on the louder one. In the preview, turns played on the wide are labelled "wide turn".
+- **Feature** (one per person): who gets more screen time. Raise it for a special guest. A featured person wins close calls, the camera switches to them sooner, their reactions are shown more often, cutaways to a listener pick them first (up to three times as often), and their own long answers are interrupted less. Lower it to show someone less. This replaces the old **Priority** setting, and existing values carry over.
+- **Max cuts / min:** a hard limit on how many cuts can happen in any minute. When a stretch is busier than that, PodDirector drops the least important cuts first: reactions, then pause wides, cutaways, overlaps, then the shortest speaker shots. Cuts forced by camera movement stay. **This is the setting to use when the edit feels too busy.**
+- **Minimum close-up** (formerly *Minimum shot* under Switching): a close-up, or any other shot, shorter than this gets absorbed into a neighbor, so the camera never flicks to someone for a moment. Reaction shots use their own length, and cuts forced by a moving camera (a dolly reframe) ignore it. Each person can have their own under ⚙ (**Min close-up**).
+- **Minimum wide**: every wide shot stays up at least this long (default 5 s), running on into the next shot when needed. Wides forced by a moving dolly, short overlaps and pauses no longer flash by; it never runs over a locked shot or a reaction shot.
+
+  **Content cut warning.** If footage has already been removed from the timeline, a piece left between two cuts can be shorter than the minimum. Nothing can hold a shot that long there without crossing a cut. After a scan, PodDirector checks the wide camera's clips for content cuts: places where the next clip jumps to a different point in the source, or to another file. Razor cuts that keep the footage continuous don't count, nor do cuts outside the In/Out range. If any piece is too short, a warning appears under **Minimum wide**. **Short sections between content cuts**, at the top of the Cleanup tab, lists each one with its length; click it to jump there. The check uses the longer of Minimum wide and Minimum close-up, and updates as you move them.
+
+  Both minimums range from 2 to 20 seconds. In the fast modes (**Rapid cutting**, **Lively discussion**, **Social clips**) Minimum close-up instead runs from 0.5 to 10 seconds, so quick reactions and back-and-forth can stay short.
+
+  Under the preview, **Shots by reason** shows what's causing the cuts. Lots of "reactions" means lower **Reaction frequency**, set **Interjections** to *Ignore*, or *lower* **Interjection length** (a longer setting turns more remarks into reaction shots). Lots of "dolly moving" means the operator reframes often; that's not a setting problem.
+
+### Switching (Advanced)
 
 - **Reaction delay:** how long a new voice has to keep talking before the camera follows. Raise it if the edit feels jumpy. Lower it if the camera is late to the new speaker.
 - **Cut timing:** where the cut lands relative to the first word. Slightly negative (−0.1 s) cuts just before they speak, which feels natural. Positive values cut a beat after, like a live switcher reacting.
-- **Minimum shot:** shots shorter than this get absorbed into a neighbor. Reaction shots use their own length, and cuts forced by a moving camera (a dolly reframe) ignore it.
-- **Max cuts / min:** a hard limit on how many cuts can happen in any minute. When a stretch is busier than that, PodDirector drops the least important cuts first: reactions, then pause wides, cutaways, overlaps, then the shortest speaker shots. Cuts forced by camera movement stay. **This is the setting to use when the edit feels too busy.**
-- **Minimum wide** (Wide & group shots): every wide shot stays up at least this long (default 5 s), running on into the next shot when needed. Wides forced by a moving dolly, short overlaps and pauses no longer flash by; it never runs over a locked shot or a reaction shot. Set it to 0 to use the normal minimum shot.
-
-  Under the preview, **Shots by reason** shows what's causing the cuts. Lots of "reactions" means lower **Reaction frequency**, set **Interjections** to *Ignore*, or *lower* **Interjection length** (a longer setting turns more remarks into reaction shots). Lots of "dolly moving" means the operator reframes often; that's not a setting problem.
 
 ### Wide and group shots
 
@@ -142,14 +159,27 @@ You rarely need these.
 ### Per-speaker settings (⚙ on each speaker)
 
 - **Threshold:** Auto, or set it by hand. The bar under the speaker shows their noise floor and speech level, and the white line is the threshold.
-- **Priority:** wins close calls. For example, give the host +3 dB so the camera favors them in overlaps.
-- **Min shot:** a minimum shot length just for this speaker.
+- **Min close-up:** a minimum close-up length just for this speaker.
 - **Reacts on screen:** turn off if this person's "mm-hmm"s shouldn't trigger reaction shots.
 - **Use as listener:** turn off if this person shouldn't be shown listening during cutaways.
 
+### Mic confidence
+
+Under the preview stats, **Mic confidence** (click to open or close) rates how well each mic picks up its own speaker, from 0 to 100: **good** (75+), **fair** (55–74) or **poor**. The heading shows the weakest mic, so you can leave it closed and still see when something's wrong. Each person's row shows:
+
+- **Level:** their voice compared with the loudest mic. Far below it usually means they're sitting back from the mic.
+- **Separation:** how much louder they are on their own mic than the others are on it. A low number means a lot of bleed, so PodDirector can mix up who's talking.
+- **Borderline:** how much of their speech only just clears the threshold. Quieter words may be missed.
+- **Maybe missed:** seconds where nobody was detected but their mic was just under the threshold.
+- **Weak:** a minute or more where their level ran 10 dB or more below their usual, for example after turning away or leaning back. Click one to jump there and check the cut.
+
+Separation counts for most of the score. The scale was tuned on a year of real episodes. Well-mic'd speakers sit at 25–30 dB of separation. Someone sitting back from the mic, especially beside a voice that carries, drops to 10–14 dB, and that's where cuts to them start going wrong. Level counts for little, because it mostly reflects recorder gain rather than mic technique.
+
+Each row ends with a tip on what to change: usually that speaker's **Threshold** (⚙), **Sensitivity** or **Bleed rejection**. It can't fix the recording itself, but it shows where to check the cut by hand or lock a shot.
+
 ### Reading the stats
 
-Under the preview you'll see the number of cuts, cuts per minute, average and longest shot, **screen time per camera**, and **talk time per speaker**. If a speaker talks 40% of the time but only gets 15% screen time, raise their priority or lower the reaction frequency.
+Under the preview you'll see the number of cuts, cuts per minute, average and longest shot, **screen time per camera**, and **talk time per speaker**. If a speaker talks 40% of the time but only gets 15% screen time, raise their **Feature** slider or lower the reaction frequency.
 
 ---
 
@@ -193,7 +223,7 @@ Updates can come from two places:
 | "ffmpeg was not found" | Check Settings. The bundled copy should appear there. If antivirus quarantined it, restore it or set a custom path. |
 | Very few cuts; the camera barely switches | Check each speaker's channel menu: speakers sharing one multichannel file must each use their own channel, not **All ch**. |
 | The camera follows the wrong person | Open ⚙ on that speaker and look at the level bar. If the white threshold line sits inside the bleed, set the threshold manually above it, or lower **Bleed rejection**. |
-| Too many quick cuts | Raise **Reaction delay** and **Minimum shot**, or switch to **Calm**. |
+| Too many quick cuts | Raise **Minimum close-up**, lower **Max cuts / min**, or switch to **Calm discussion**. Under Advanced, raise **Reaction delay**. |
 | Reactions feel random | Lower **Reaction frequency**, or turn off **Reacts on screen** for the chatty listener. |
 | PodDirector cuts to the dolly while it's still moving | Raise **Settle time**, or lower **Steady below**. |
 | The dolly is hardly used | Check its movement lane. If it's mostly amber, raise **Steady below** a little or turn on **Slow moves on air**. |

@@ -209,7 +209,7 @@
     }
   };
 
-  var REASON = { reaction: "react", cutaway: "cutaway", crosstalk: "overlap", pause: "pause", opening: "open", locked: "locked", "interjection-wide": "react", "camera-move": "cam moving", "jump-cover": "cut cover", removed: "removed" };
+  var REASON = { "wide-turn": "wide turn", reaction: "react", cutaway: "cutaway", crosstalk: "overlap", pause: "pause", opening: "open", locked: "locked", "interjection-wide": "react", "camera-move": "cam moving", "jump-cover": "cut cover", removed: "removed" };
   function fmt(t) { var m = Math.floor(t / 60), s = Math.floor(t % 60); return (m >= 60 ? Math.floor(m / 60) + ":" + pad(m % 60) : m) + ":" + pad(s); }
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
   function hexA(hex, a) {

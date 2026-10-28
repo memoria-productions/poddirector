@@ -93,6 +93,107 @@ test("speaker priority wins close calls in loudest mode", () => {
   assert.equal(at(b, 5).cameraId, "cB");
 });
 
+test("wide bias: toward the wide, some turns play on it; toward close-ups, none do", () => {
+  const turns = [];
+  for (let i = 0; i < 12; i++) turns.push([i % 2 ? "B" : "A", 1 + i * 6, 6.6 + i * 6]);
+  const input = makeCurves(turns, { durationSec: 75 });
+  const style = { openOnWideSec: 0, interjectionMode: "ignore", maxShotSec: 0, wideAfterSilenceSec: 0 };
+  const wideTurns = (r) => r.shots.filter((s) => s.reason === "wide-turn").length;
+  const wide = D.plan(input, { speakers, cameras, style: Object.assign({ wideBias: 1 }, style) });
+  const close = D.plan(input, { speakers, cameras, style: Object.assign({ wideBias: -1 }, style) });
+  const neutral = D.plan(input, { speakers, cameras, style });
+  assert.ok(wideTurns(wide) >= 2, "some turns on the wide: " + wideTurns(wide));
+  assert.ok(wide.stats.screenTimePct.cW > neutral.stats.screenTimePct.cW);
+  assert.equal(wideTurns(close), 0);
+  assert.equal(wideTurns(neutral), 0);
+});
+
+test("wide bias toward close-ups keeps a long overlap on the loudest voice", () => {
+  const input = makeCurves([["A", 1, 12], ["B", 8, 12.4], ["B", 12.4, 25]], { durationSec: 27 });
+  const r = D.plan(input, { speakers, cameras, style: { openOnWideSec: 0, interjectionMode: "ignore", wideBias: -1 } });
+  assert.notEqual(at(r, 10).cameraId, "cW");
+});
+
+test("a featured speaker is shown listening more during others' long turns", () => {
+  const cams = cameras.concat([{ id: "cC", name: "Third CU", videoTrack: 3, shows: ["C"] }]);
+  const three = speakers.concat([{ id: "C", name: "Third" }]);
+  const input = makeCurves([["A", 1, 200]], { durationSec: 202 });
+  const style = { openOnWideSec: 0, maxShotSec: 10, cutawayMode: "reaction" };
+  const count = (r, cam) => r.shots.filter((s) => s.reason === "cutaway" && s.cameraId === cam).length;
+  const plain = D.plan(input, { speakers: three, cameras: cams, style });
+  const featured = D.plan(input, { speakers: [three[0], three[1], Object.assign({ biasDb: 10 }, three[2])], cameras: cams, style });
+  assert.ok(count(featured, "cC") > count(plain, "cC"), count(featured, "cC") + " vs " + count(plain, "cC"));
+  assert.ok(count(featured, "cC") > count(featured, "cB"));
+});
+
+test("a featured speaker is switched to sooner and cut away from less", () => {
+  // B's 0.5 s answer is under the 0.6 s reaction delay unless B is featured.
+  const input = makeCurves([["A", 1, 10], ["B", 10.2, 10.7], ["A", 11.5, 20]], { durationSec: 21 });
+  const style = { openOnWideSec: 0, reactionDelaySec: 0.6, minShotSec: 0.3, interjectionMode: "ignore", wideAfterSilenceSec: 0 };
+  const plain = D.plan(input, { speakers, cameras, style });
+  const featured = D.plan(input, { speakers: [speakers[0], { id: "B", name: "Guest", biasDb: 10 }], cameras, style });
+  assert.notEqual(at(plain, 10.5).cameraId, "cB");
+  assert.equal(at(featured, 10.5).cameraId, "cB");
+  const mono = makeCurves([["B", 1, 80]], { durationSec: 82 });
+  const cut = (sp) => D.plan(mono, { speakers: sp, cameras, style: { openOnWideSec: 0, maxShotSec: 15 } })
+    .shots.filter((s) => s.reason === "cutaway").length;
+  assert.ok(cut([speakers[0], { id: "B", name: "Guest", biasDb: 10 }]) < cut(speakers));
+});
+
+test("every mode plans a cut and has a label and description", () => {
+  const input = conversation([["A", 18, 18.6]]);
+  Object.keys(D.PRESETS).forEach((k) => {
+    assert.ok(D.PRESETS[k].label && D.PRESETS[k].description, k);
+    const r = D.plan(input, { speakers, cameras, preset: k });
+    assert.ok(r.shots.length > 0, k);
+  });
+  assert.ok(D.PRESETS.rapid && D.PRESETS.interview);
+});
+
+test("content cuts that leave a section shorter than the minimum are found", () => {
+  const m = "/wide.mp4";
+  const clips = [
+    { startSec: 0, endSec: 60, inPointSec: 0, mediaPath: m, speed: 1 },
+    { startSec: 60, endSec: 90, inPointSec: 60, mediaPath: m, speed: 1 },     // razor, same content: not a cut
+    { startSec: 90, endSec: 93, inPointSec: 120, mediaPath: m, speed: 1 },    // content cut at 90, another at 93
+    { startSec: 93, endSec: 150, inPointSec: 200, mediaPath: m, speed: 1 },
+    { startSec: 150, endSec: 154, inPointSec: 0, mediaPath: "/other.mp4", speed: 1 }, // new file at 150
+    { startSec: 160, endSec: 162, inPointSec: 4, mediaPath: "/other.mp4", speed: 1 }  // after a gap: no cut either side
+  ];
+  const short = D.shortSections(clips, 5, { fps: 30 });
+  assert.deepEqual(short.map((s) => [s.startSec, s.endSec]), [[90, 93], [150, 154]]);
+  assert.ok(short[0].cutBefore && short[0].cutAfter);
+  assert.equal(D.shortSections(clips, 4, { fps: 30 }).length, 1, "the 4 s section passes a 4 s minimum, the 3 s one doesn't");
+  // Only cuts inside the In/Out range count, and sections are trimmed to it.
+  assert.deepEqual(D.shortSections(clips, 5, { fps: 30, rangeStart: 0, rangeEnd: 92 }).map((s) => [s.startSec, s.endSec]), [[90, 92]]);
+  assert.equal(D.shortSections(clips, 5, { fps: 30, rangeStart: 0, rangeEnd: 90 }).length, 0);
+});
+
+test("mic confidence: clean mics score well, a quiet bleed-heavy mic scores poorly", () => {
+  const conv = [["A", 1, 20], ["B", 20.5, 40], ["A", 40.5, 60], ["B", 60.5, 80]];
+  const good = D.plan(makeCurves(conv, { durationSec: 82 }), { speakers, cameras });
+  good.confidence.forEach((c) => assert.ok(c.score >= 75 && c.label === "good", c.speakerId + " " + c.score));
+  // B mumbles 16 dB below A: barely louder on their own mic than A's bleed.
+  const quiet = conv.map(([id, a, b]) => [id, a, b, id === "B" ? -34 : -18]);
+  const poor = D.plan(makeCurves(quiet, { durationSec: 82 }), { speakers, cameras });
+  const b = poor.confidence.find((c) => c.speakerId === "B");
+  assert.ok(b.score < 60, "B scored " + b.score);
+  assert.ok(b.levelGapDb <= -12 && b.hints.length > 0);
+  assert.ok(poor.confidence.find((c) => c.speakerId === "A").score >= 75);
+});
+
+test("mic confidence: a stretch where someone leans away is flagged", () => {
+  const input = makeCurves([["A", 1, 60], ["A", 60, 120, -30], ["A", 120, 180], ["B", 181, 200]], { durationSec: 202 });
+  const r = D.plan(input, { speakers, cameras });
+  const a = r.confidence.find((c) => c.speakerId === "A");
+  assert.ok(a.weak.length >= 1, JSON.stringify(a.weak));
+  assert.ok(a.weak[0][0] >= 55 && a.weak[a.weak.length - 1][1] <= 125, JSON.stringify(a.weak));
+  // Range plans report weak stretches in sequence time.
+  const ranged = D.planRange(input, { speakers, cameras }, 10, 200);
+  const ar = ranged.confidence.find((c) => c.speakerId === "A");
+  assert.ok(ar.weak.length && ar.weak[0][0] >= 55, JSON.stringify(ar.weak));
+});
+
 test("manual locks override the automatic choice", () => {
   const r = D.plan(conversation(), { speakers, cameras, overrides: [{ startSec: 15, endSec: 20, cameraId: "cW" }] });
   assert.equal(at(r, 17).cameraId, "cW");

@@ -1,22 +1,32 @@
 /* Control definitions for the style + cleanup panels. Each maps 1:1 to an engine setting. */
 window.PD_UI = {
+  // Always visible under the mode; everything in styleGroups sits under "Advanced".
+  basicControls: [
+    { key: "wideBias", label: "Close-ups / wide", min: -1, max: 1, step: 0.1, ends: ["close-ups", "wide"],
+      fmt: function (v) { return v === 0 ? "even" : (v < 0 ? "CU " : "W ") + Math.round(Math.abs(v) * 100) + "%"; },
+      help: "Lean the whole cut toward the speaker close-ups or the static wide. Toward the wide, some turns play on the wide and overlaps and pauses reach it sooner. Toward close-ups, overlaps stay on the loudest voice and pauses hold the speaker." },
+    { key: "maxCutsPerMin", label: "Max cuts / min", min: 0, max: 20, step: 1, unit: "", zero: "no limit",
+      help: "Hard limit on cuts in any minute. When a stretch is busier, the least important cuts are dropped first: reactions, then pause wides, cutaways, overlaps, then the shortest speaker shots. Cuts forced by camera movement stay." },
+    { key: "minShotSec", label: "Minimum close-up", min: 2, max: 20, step: 0.5, unit: "s",
+      fast: { min: 0.5, max: 10, step: 0.1 }, // range in the fast modes (Rapid, Lively, Social)
+      help: "Close-ups (and any other shot) shorter than this get absorbed into a neighbour, so the camera never flicks to someone for a moment. 2–20 s, or 0.5–10 s in the fast modes (Rapid cutting, Lively discussion, Social clips). Reaction shots use their own length, and cuts forced by a moving camera ignore it. Each person can have their own under ⚙ on their speaker row." },
+    { key: "minWideSec", label: "Minimum wide", min: 2, max: 20, step: 0.5, unit: "s",
+      help: "Every wide shot stays up at least this long, running on into the next shot if needed, so wides forced by a moving camera, overlaps or pauses don't flash by." }
+  ],
+  featureControl: { label: "Feature", min: -10, max: 10, step: 1, ends: ["less", "more"],
+    fmt: function (v) { return v === 0 ? "even" : (v > 0 ? "+" : "") + v; },
+    help: "Screen time for this person. Raise it for a special guest: they win close calls, the camera switches to them sooner, their reactions are shown more, listener cutaways favour them, and their own long answers are interrupted less. Lower it to show someone less." },
   styleGroups: [
     { title: "Switching", open: true, controls: [
       { key: "reactionDelaySec", label: "Reaction delay", min: 0, max: 2, step: 0.05, unit: "s",
         help: "How long a new voice must keep talking before the camera switches. Higher = calmer, fewer false switches." },
       { key: "cutTimingSec", label: "Cut timing", min: -0.6, max: 0.6, step: 0.02, unit: "s",
-        help: "Where the cut lands relative to the first word. Negative = cut just before they speak (anticipate), positive = a beat after (react)." },
-      { key: "minShotSec", label: "Minimum shot", min: 0.5, max: 8, step: 0.1, unit: "s",
-        help: "Shots shorter than this get absorbed into a neighbour. Reaction shots use their own length, and cuts forced by a moving camera ignore it: use Max cuts / min for an overall limit." },
-      { key: "maxCutsPerMin", label: "Max cuts / min", min: 0, max: 20, step: 1, unit: "", zero: "no limit",
-        help: "Hard limit on cuts in any minute. When a stretch is busier, the least important cuts are dropped first: reactions, then pause wides, cutaways, overlaps, then the shortest speaker shots. Cuts forced by camera movement stay." }
+        help: "Where the cut lands relative to the first word. Negative = cut just before they speak (anticipate), positive = a beat after (react)." }
     ]},
-    { title: "Wide & group shots", open: true, controls: [
+    { title: "Wide & group shots", open: false, controls: [
       { key: "crosstalkMode", label: "Talking over", type: "select",
         options: [["wide", "Go to the group/wide shot"], ["loudest", "Stay on the loudest"], ["hold", "Hold the current shot"]],
         help: "What to show when two or more people talk at once." },
-      { key: "minWideSec", label: "Minimum wide", min: 0, max: 15, step: 0.5, unit: "s", zero: "same as minimum shot",
-        help: "Every wide shot stays up at least this long, running on into the next shot if needed, so wides forced by a moving camera, overlaps or pauses don't flash by." },
       { key: "crosstalkMinSec", label: "Overlap time", min: 0.2, max: 4, step: 0.1, unit: "s",
         help: "Overlap must last this long to count as crosstalk." },
       { key: "wideAfterSilenceSec", label: "Wide on pauses", min: 0, max: 10, step: 0.5, unit: "s", zero: "off",
@@ -24,7 +34,7 @@ window.PD_UI = {
       { key: "openOnWideSec", label: "Open on wide", min: 0, max: 15, step: 0.5, unit: "s", zero: "off",
         help: "Start the show on the wide shot for this long." }
     ]},
-    { title: "Reactions & interjections", open: true, controls: [
+    { title: "Reactions & interjections", open: false, controls: [
       { key: "interjectionMode", label: "Interjections", type: "select",
         options: [["reaction", "Cut to the person reacting"], ["wide", "Cut to the wide"], ["ignore", "Ignore (stay on speaker)"]],
         help: "“Yeah”, laughs and quick remarks while someone else holds the floor." },

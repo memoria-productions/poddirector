@@ -57,18 +57,29 @@
         <button id="btnAddCamera" class="btn ghost small">+ Camera</button>
       </div>
       <div id="cameraList" class="rows"></div>
-      <label class="chip" style="margin-top:6px" title="Premiere shows the top-most enabled clip. The bottom camera (V1, usually the static wide) stays whole and enabled underneath; only the cameras above it are cut and switched. Much faster to build."><input type="checkbox" id="layered" checked /> Leave the bottom camera whole (only cut the cameras above it)</label>
+      <div id="v1Warn" class="v1-warn warn small hidden"></div>
     </div>
 
     <div class="card">
       <div class="card-head">
         <h2>Cutting style</h2>
         <div class="inline">
-          <select id="presetSelect"></select>
+          <select id="presetSelect" title="Mode: a starting point for every setting below"></select>
           <button id="btnSavePreset" class="btn ghost small" title="Save these settings as a preset">Save</button>
         </div>
       </div>
-      <div id="styleControls"></div>
+      <div id="modeNote" class="mode-note muted small"></div>
+      <div id="basicControls"></div>
+      <div id="featureControls" class="feature"></div>
+      <details id="advancedStyle" class="advanced">
+        <summary>Advanced <small class="muted" id="advancedCount"></small></summary>
+        <div id="styleControls"></div>
+        <details class="group" id="timelineGroup">
+          <summary>Timeline</summary>
+          <label class="chip" style="margin:4px 0" title="Premiere shows the top-most enabled clip. The bottom camera (the static wide) stays whole and enabled underneath; only the cameras above it are cut and switched. Content cuts already in the footage stay as they are. Much faster to build. Leave this on."><input type="checkbox" id="layered" checked /> Leave the bottom camera whole (only cut the cameras above it)</label>
+          <div id="layeredNote" class="warn small hidden">Off: every camera track, including the wide, is razored at every shot change.</div>
+        </details>
+      </details>
     </div>
 
     <div class="range-row">
@@ -97,6 +108,11 @@
       </div>
       <div id="lockList" class="locklist"></div>
       <div id="stats" class="stats"></div>
+      <details id="confBox" class="group confidence hidden">
+        <summary>Mic confidence <small id="confSummary" class="muted"></small></summary>
+        <p class="muted small">How well each mic picks up its own speaker. Low scores usually mean poor mic discipline (too far from the mic, turned away) or a lot of bleed, so cuts to that person can be late, missing or wrong.</p>
+        <div id="confList"></div>
+      </details>
     </div>
 
     <div class="actions two">
@@ -116,6 +132,12 @@
 
   <!-- ======================================================= CLEANUP -->
   <section class="page" id="page-cleanup">
+    <div class="card hidden" id="shortCard">
+      <div class="card-head"><h2>Short sections between content cuts <small id="shortCount"></small></h2></div>
+      <p id="shortNote" class="muted small"></p>
+      <div id="shortList" class="suglist"></div>
+    </div>
+
     <div class="card">
       <h2>Transcript</h2>
       <p class="muted">Finds spots where someone said to cut, restarted a sentence, or went off the record.</p>

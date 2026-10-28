@@ -9,12 +9,19 @@
       if (/^VOX/.test(name)) clips.push({ name: "outro_" + name + ".wav", startSec: DUR - 20, endSec: DUR, inPointSec: 0, mediaPath: "/demo/outro-" + name + ".wav", speed: 1 });
       return { index: i, name: name, muted: false, clips: clips };
     }
+    // Camera footage with two content cuts (sections removed from the timeline) leaving 3 s between them at 1:40.
+    function cam(name) {
+      var m = "/demo/" + name + ".mp4";
+      return [{ startSec: 0, endSec: 100, inPointSec: 0, mediaPath: m, speed: 1 },
+              { startSec: 100, endSec: 103, inPointSec: 140, mediaPath: m, speed: 1 },
+              { startSec: 103, endSec: DUR, inPointSec: 190, mediaPath: m, speed: 1 }];
+    }
     return {
       name: "Demo Episode 42", sequenceID: "demo", fps: 29.97, ticksPerFrame: "8475667200", durationSec: DUR, inSec: 8, outSec: DUR - 22,
       audioTracks: [at(0, "VOX1"), at(1, "VOX2"), at(2, "VOX3"), at(3, "SFX"), at(4, "Music")],
       videoTracks: [
-        { index: 0, name: "Wide", clipCount: 1, firstClip: "CAM_WIDE.mp4", endSec: DUR, mediaPaths: ["/demo/wide.mp4"] },
-        { index: 1, name: "Dolly", clipCount: 1, firstClip: "CAM_DOLLY.mp4", endSec: DUR, mediaPaths: ["/demo/dolly.mp4"] }
+        { index: 0, name: "Wide", clipCount: 3, firstClip: "CAM_WIDE.mp4", endSec: DUR, mediaPaths: ["/demo/wide.mp4"], clips: cam("wide") },
+        { index: 1, name: "Dolly", clipCount: 3, firstClip: "CAM_DOLLY.mp4", endSec: DUR, mediaPaths: ["/demo/dolly.mp4"], clips: cam("dolly") }
       ]
     };
   }
@@ -48,7 +55,9 @@
     lines.forEach(function (l) {
       for (var f = Math.round(l[1] / hop); f < Math.min(frames, Math.round(l[2] / hop)); f++) {
         var syll = Math.sin(f * hop * 2 * Math.PI * (3.5 + l[0] * 0.4)) > -0.5;
-        speech[l[0]][f] = Math.max(speech[l[0]][f], syll ? gains[l[0]] + (r() - 0.5) * 8 : gains[l[0]] - 24);
+        // Speaker 2 leans back from the mic for the first minute of the show: a weak stretch under Mic confidence.
+        var g = gains[l[0]] - (l[0] === 1 && f * hop > 5 && f * hop < 70 ? 12 : 0);
+        speech[l[0]][f] = Math.max(speech[l[0]][f], syll ? g + (r() - 0.5) * 8 : g - 24);
       }
     });
     var out = {};

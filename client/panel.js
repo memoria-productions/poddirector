@@ -299,12 +299,13 @@
       var words = tokens(nm);
       var shows;
       var byName = cfg.speakers.filter(function (s) { return tokens(s.name).some(function (w) { return words.indexOf(w) >= 0; }); });
-      if (/wide|master|group|2.?shot|two.?shot|\ball\b/i.test(nm)) shows = allIds.slice();
+      // The bottom camera is always the wide: it stays whole under the others.
+      if (i === 0 || /wide|master|group|2.?shot|two.?shot|\ball\b/i.test(nm)) shows = allIds.slice();
       else if (byName.length) shows = byName.map(function (s) { return s.id; });
       else if (next < cfg.speakers.length) shows = [cfg.speakers[next++].id];
       else shows = allIds.slice();
       var moving = /dolly|slider|jib|crane|handheld|hand-held|gimbal|steadicam|roam|rover|moving|operat|follow|track/i.test(nm);
-      var follows = /follow|roam|rover|operat/i.test(nm);
+      var follows = i > 0 && /follow|roam|rover|operat/i.test(nm);
       cfg.cameras.push({ id: "C" + (i + 1), name: nm.replace(/\.[a-z0-9]{2,4}$/i, ""), videoTrack: v.index, shows: follows ? [] : shows,
         moving: moving, follows: follows, enabled: true });
     });
@@ -353,7 +354,7 @@
       }),
       cameras: c.cameras.map(function (cm) {
         return { name: cm.name, trackName: info.videoTracks[cm.videoTrack] ? info.videoTracks[cm.videoTrack].name : null, videoTrack: cm.videoTrack,
-          shows: cm.shows.map(function (id) { return nameOf[id]; }).filter(Boolean), moving: !!cm.moving, follows: !!cm.follows, enabled: cm.enabled };
+          shows: cm.shows.map(function (id) { return nameOf[id]; }).filter(Boolean), moving: !!cm.moving, follows: !!cm.follows, static: !!cm.static, enabled: cm.enabled };
       })
     };
   }
@@ -386,7 +387,7 @@
       var t = findTrack(info.videoTracks, c.trackName, c.videoTrack);
       if (t < 0) { missing.push(c.name + " (" + c.trackName + ")"); return; }
       cfg.cameras.push({ id: "C" + (i + 1), name: c.name, videoTrack: t, shows: (c.shows || []).map(function (n) { return idByName[n]; }).filter(Boolean),
-        moving: !!c.moving, follows: !!c.follows, enabled: c.enabled !== false });
+        moving: !!c.moving, follows: !!c.follows, static: !!c.static, enabled: c.enabled !== false });
     });
     cfg._missing = missing;
     return cfg;
@@ -506,7 +507,7 @@
     options.forEach(function (o) { var op = el("option", { value: o[0], text: o[1] }); if (String(o[0]) === String(value)) op.selected = true; s.appendChild(op); });
     return s;
   }
-  function changed(replanOnly) { saveConfig(); if (!replanOnly) setButtons(); debounce("plan", replan, 120); }
+  function changed(replanOnly) { saveConfig(); if (!replanOnly) setButtons(); renderShortWides(); renderV1Warning(); debounce("plan", replan, 120); }
 
   function renderSpeakers() {
     var box = $("speakerList"); box.innerHTML = "";
@@ -514,7 +515,7 @@
     state.config.speakers.forEach(function (sp, i) {
       var row = el("div", { class: "row" + (sp._open ? " open" : "") });
       row.style.setProperty("--sw", colorOf(i));
-      var name = el("input", { class: "name", value: sp.name, oninput: function () { sp.name = name.value; renderCameras(); changed(true); } });
+      var name = el("input", { class: "name", value: sp.name, oninput: function () { sp.name = name.value; renderCameras(); renderFeature(); changed(true); } });
       var chans = [["mix", "All ch"], [0, "Ch 1"], [1, "Ch 2"], [2, "Ch 3"], [3, "Ch 4"], [4, "Ch 5"], [5, "Ch 6"], [6, "Ch 7"], [7, "Ch 8"]];
       var main = el("div", { class: "row-main" }, [
         name,
@@ -549,18 +550,15 @@
         help: "Level above which this mic counts as talking. Auto calibrates from the noise floor and speech level." },
         auto ? autoVal : sp.thresholdDb, function (v) { sp.thresholdDb = v; changed(true); },
         { autoToggle: auto, onAuto: function (on) { sp.thresholdDb = on ? null : Math.round(autoVal); renderSpeakers(); changed(true); } }));
-      more.appendChild(slider({ label: "Priority", min: -10, max: 10, step: 0.5, unit: "dB",
-        help: "Wins close calls and overlaps. Give the host +3 to favor them, or a guest −3 to cut to them less." },
-        sp.biasDb || 0, function (v) { sp.biasDb = v; changed(true); }));
-      more.appendChild(slider({ label: "Min shot", min: 0, max: 8, step: 0.1, unit: "s", zero: "global",
-        help: "Minimum length for this speaker's shots. 0 = use the global setting." },
+      more.appendChild(slider({ label: "Min close-up", min: 0, max: 20, step: 0.5, unit: "s", zero: "global",
+        help: "Minimum length for this speaker's close-ups. 0 = use Minimum close-up under Cutting style." },
         sp.minShotSec || 0, function (v) { sp.minShotSec = v > 0 ? v : null; changed(true); }));
       var chips = el("div", { class: "chips" }, [
         chip("Reacts on screen", sp.interjections !== false, function (on) { sp.interjections = on; changed(true); },
           "Their laughs / “yeah”s can trigger a reaction shot of them"),
         chip("Use as listener", sp.reactionShots !== false, function (on) { sp.reactionShots = on; changed(true); },
           "Can be shown listening during someone else's monologue"),
-        chip("Enabled", sp.enabled !== false, function (on) { sp.enabled = on; changed(); }, "Turn off to ignore this mic")
+        chip("Enabled", sp.enabled !== false, function (on) { sp.enabled = on; renderStyle(); changed(); }, "Turn off to ignore this mic")
       ]);
       more.appendChild(chips);
       row.appendChild(more);
@@ -589,7 +587,10 @@
       row.style.setProperty("--sw", camColor(i));
       var name = el("input", { class: "name", value: cm.name, oninput: function () { cm.name = name.value; changed(true); } });
       var role = cm.follows ? "follows speaker" : cm.shows.length === 0 ? "unused" : cm.shows.length === 1 ? "close-up" : (cm.shows.length === spk.length ? "wide" : cm.shows.length + "-shot");
+      if (cm.static) role = "static " + role;
       if (cm.moving) role += " \u00B7 movement check";
+      var isBottom = cm.enabled !== false && !state.config.cameras.some(function (o) { return o !== cm && o.enabled !== false && o.videoTrack < cm.videoTrack; });
+      if (isBottom && state.config.cameras.length > 1 && load("layered", true) !== false) role += " \u00B7 bottom, kept whole";
       row.appendChild(el("div", { class: "row-main" }, [
         name,
         select(trackOptions("video"), cm.videoTrack, function (v) { cm.videoTrack = +v; changed(); }),
@@ -606,14 +607,16 @@
         chips.appendChild(chip(sp.name, cm.shows.indexOf(sp.id) >= 0, function (on) {
           cm.shows = cm.shows.filter(function (id) { return id !== sp.id; });
           if (on) cm.shows.push(sp.id);
-          renderCameras(); changed();
+          renderCameras(); renderModeNote(); changed();
         }));
       });
-      chips.appendChild(chip("Follows speaker", !!cm.follows, function (on) { cm.follows = on; renderCameras(); renderStyle(); changed(); },
+      chips.appendChild(chip("Static", !!cm.static, function (on) { cm.static = on; if (on) cm.follows = false; renderCameras(); renderStyle(); changed(); },
+        "A camera that stays on its shot (no operator re-framing). Tick it for each person's close-up camera: Rapid cutting checks everyone has one. Check for movement can stay on if the shot itself moves (a slider or slow push-in)."));
+      chips.appendChild(chip("Follows speaker", !!cm.follows, function (on) { cm.follows = on; if (on) cm.static = false; renderCameras(); renderStyle(); changed(); },
         "An operator re-frames this camera on whoever is talking: it can show any speaker (never a group or a listener)."));
       chips.appendChild(chip("Check for movement", !!cm.moving, function (on) { cm.moving = on; renderCameras(); renderStyle(); changed(); },
         "On for a dolly, slider, handheld or operated camera: PodDirector reads its picture and only cuts to it when it's steady. Leave off for locked-off cameras like a static wide (faster analysis, never held back)."));
-      chips.appendChild(chip("Enabled", cm.enabled !== false, function (on) { cm.enabled = on; changed(); }));
+      chips.appendChild(chip("Enabled", cm.enabled !== false, function (on) { cm.enabled = on; renderModeNote(); changed(); }));
       var stab = state.result && state.result.stability && state.result.stability[cm.id];
       if (cm.moving && stab) {
         row.appendChild(el("div", { class: "muted small", text: "Steady " + stab.steadyPct + "% \u00B7 slow moves " + stab.slowPct + "% \u00B7 big moves " + stab.fastPct + "%" +
@@ -625,6 +628,30 @@
       renderFramingFor(cm, row);
       box.appendChild(row);
     });
+    renderV1Warning();
+  }
+
+  /** Safety check: V1 should hold a static wide that shows everyone, since it stays whole under the other cameras. */
+  function renderV1Warning() {
+    var box = $("v1Warn"), q = state.seq;
+    var problems = [];
+    if (q && state.config.cameras.length) {
+      var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
+      var v1 = state.config.cameras.filter(function (c) { return c.enabled !== false && c.videoTrack === 0; })[0];
+      var t0 = q.videoTracks.filter(function (v) { return v.index === 0; })[0];
+      if (!v1) problems.push(t0 && t0.clipCount ? "No camera is set to V1." : "V1 is empty: there's no footage on the bottom video track.");
+      else {
+        if (v1.follows) problems.push("“" + v1.name + "” on V1 is set to follow the speaker.");
+        else if (v1.shows.length < spk.length) problems.push("“" + v1.name + "” on V1 isn't set as the wide (tick everyone on it).");
+        if (v1.moving) problems.push("“" + v1.name + "” on V1 has Check for movement on; the wide is normally a locked-off camera.");
+      }
+    }
+    box.innerHTML = "";
+    box.classList.toggle("hidden", !problems.length);
+    if (!problems.length) return;
+    box.appendChild(el("b", { text: "⚠ V1 should be the static wide. " }));
+    box.appendChild(document.createTextNode(problems.join(" ") + " Check the sequence: put a static wide camera on V1, since the bottom camera stays whole under the others" +
+      (load("layered", true) !== false ? " and shows wherever they're switched off." : ".")));
   }
   // Close-ups take their speaker's colour; wides/group shots get neutral tones.
   function camColor(i) {
@@ -654,7 +681,8 @@
     function show(v) {
       v = +v;
       if (opts.autoToggle) { out.textContent = "auto " + Math.round(v); return; }
-      if (def.zero && v === 0) out.textContent = def.zero;
+      if (def.fmt) out.textContent = def.fmt(Math.round(v * 100) / 100);
+      else if (def.zero && v === 0) out.textContent = def.zero;
       else if (def.pct) out.textContent = Math.round(v * 100) + "%";
       else out.textContent = (Math.abs(v) < 10 && def.step < 1 ? v.toFixed(def.step < 0.1 ? 2 : 1) : String(Math.round(v * 10) / 10)) + (def.unit && def.unit !== "%" ? " " + def.unit : "");
     }
@@ -670,28 +698,168 @@
     }
     return wrap;
   }
+  /** Captions for a slider's two ends, on their own line above it so the sliders below stay evenly spaced. */
+  function endsRow(title, ends, help) {
+    return el("div", { class: "ctl ends", title: help || "" }, [el("label", { text: title || "" }),
+      el("div", {}, [el("span", { text: ends[0] }), el("span", { text: ends[1] })])]);
+  }
 
   function renderStyle() {
-    var box = $("styleControls"); box.innerHTML = "";
     var st = effectiveStyle();
     var base = D.styleFromPreset(state.config.preset, {});
+    var isChanged = function (key) { return state.config.style[key] !== undefined && state.config.style[key] !== base[key]; };
+    function control(def) {
+      var node;
+      var set = function (v) {
+        if (v === "true") v = true; else if (v === "false") v = false;
+        state.config.style[def.key] = v; node.classList.toggle("changed", v !== base[def.key]); changed(true); countAdvanced();
+      };
+      if (def.type === "select") {
+        node = el("div", { class: "ctl", title: def.help || "" }, [el("label", { text: def.label }),
+          select(def.options, st[def.key], function (v) { set(v); })]);
+      } else node = slider(def, st[def.key], set);
+      if (isChanged(def.key)) node.classList.add("changed");
+      return node;
+    }
+
+    renderModeNote();
+    var basic = $("basicControls"); basic.innerHTML = "";
+    var fastMode = !!(D.PRESETS[state.config.preset] || {}).fast;
+    UI.basicControls.forEach(function (def) {
+      if (def.fast && fastMode) def = Object.assign({}, def, def.fast);
+      var setting = el("div", { class: "setting" });
+      if (def.ends) setting.appendChild(endsRow("", def.ends));
+      setting.appendChild(control(def));
+      if (def.key === "minWideSec") setting.appendChild(el("div", { id: "shortWideWarn", class: "warn small hidden" }));
+      basic.appendChild(setting);
+    });
+    renderFeature();
+
+    var box = $("styleControls"); box.innerHTML = "";
     var anyMoving = state.config.cameras.some(function (c) { return c.moving && c.enabled !== false; });
     UI.styleGroups.forEach(function (g) {
       if (g.onlyIfMoving && !anyMoving) return;
       var det = el("details", { class: "group" });
-      if (g.open) det.open = true;
+      if (g.open || g.controls.some(function (d) { return isChanged(d.key); })) det.open = true;
       det.appendChild(el("summary", { text: g.title }));
-      g.controls.forEach(function (def) {
-        var node;
-        var set = function (v) { if (v === "true") v = true; else if (v === "false") v = false; state.config.style[def.key] = v; node.classList.toggle("changed", v !== base[def.key]); changed(true); };
-        if (def.type === "select") {
-          node = el("div", { class: "ctl", title: def.help || "" }, [el("label", { text: def.label }),
-            select(def.options, st[def.key], function (v) { set(v); })]);
-        } else node = slider(def, st[def.key], set);
-        if (state.config.style[def.key] !== undefined && state.config.style[def.key] !== base[def.key]) node.classList.add("changed");
-        det.appendChild(node);
-      });
+      g.controls.forEach(function (def) { det.appendChild(control(def)); });
       box.appendChild(det);
+    });
+    var adv = $("advancedStyle");
+    adv.open = !!load("advancedOpen", false);
+    adv.ontoggle = function () { store("advancedOpen", adv.open); };
+    countAdvanced();
+    renderShortWides();
+  }
+
+  /**
+   * Content cuts in the footage (sections already removed from the timeline) can leave a stretch shorter than
+   * Minimum wide: nothing the cut can do keeps a shot up that long there. Flag them under Minimum wide and list
+   * them on the Cleanup tab.
+   */
+  function shortWides() {
+    var q = state.seq;
+    if (!q) return [];
+    var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
+    var cams = state.config.cameras.filter(function (c) { return c.enabled !== false && !c.follows; });
+    var wides = cams.filter(function (c) { return c.shows.length > 1 && c.shows.length >= spk.length; });
+    if (!wides.length && cams.length) wides = [cams.slice().sort(function (a, b) { return a.videoTrack - b.videoTrack; })[0]];
+    var st = effectiveStyle(), min = Math.max(st.minWideSec || 0, st.minShotSec || 0);
+    var r = currentRange(), seen = {}, out = [];
+    wides.forEach(function (c) {
+      var t = q.videoTracks.filter(function (v) { return v.index === c.videoTrack; })[0];
+      if (!t || !t.clips) return;
+      D.shortSections(t.clips, min, { fps: q.fps, rangeStart: r ? r.a : 0, rangeEnd: r ? r.b : q.durationSec }).forEach(function (s) {
+        if (seen[s.startSec]) return;
+        seen[s.startSec] = true; s.track = t.name; s.minSec = min; out.push(s);
+      });
+    });
+    return out.sort(function (a, b) { return a.startSec - b.startSec; });
+  }
+
+  function renderShortWides() {
+    var warn = $("shortWideWarn"), card = $("shortCard");
+    if (!card) return;
+    var list = shortWides(), min = list.length ? list[0].minSec : 0;
+    if (warn) {
+      warn.innerHTML = "";
+      warn.classList.toggle("hidden", !list.length);
+      if (list.length) {
+        warn.appendChild(document.createTextNode("⚠ Content cut detected: " + list.length + (list.length === 1 ? " section" : " sections") +
+          " between cuts in the footage " + (list.length === 1 ? "runs" : "run") + " under " + min + " s, so the wide will be shorter there. "));
+        warn.appendChild(el("a", { href: "#", text: "Review on the Cleanup tab", onclick: function (e) {
+          e.preventDefault(); document.querySelector('.tab[data-tab="cleanup"]').click(); card.scrollIntoView();
+        } }));
+      }
+    }
+    card.classList.toggle("hidden", !list.length);
+    if (!list.length) return;
+    $("shortCount").textContent = list.length + (list.length === 1 ? " section" : " sections");
+    $("shortNote").textContent = "Footage was removed from the timeline at these points, and the piece left between cuts is shorter than the " +
+      min + " s minimum (Minimum wide, or Minimum close-up if longer). The wide can't stay up that long here without crossing a cut. " +
+      "Click one to jump there; lengthen the section, or lower Minimum wide.";
+    var box = $("shortList"); box.innerHTML = "";
+    list.forEach(function (s) {
+      var where = s.cutBefore && s.cutAfter ? "cut at both ends" : s.cutBefore ? "cut at the start" : "cut at the end";
+      box.appendChild(el("div", { class: "sug short", onclick: function () { seek(s.startSec); } }, [
+        el("div", { class: "sug-top" }, [
+          el("span", { class: "time", text: fmt(s.startSec) + " – " + fmt(s.endSec) }),
+          el("span", { class: "badge mid", text: s.lengthSec + " s" })
+        ]),
+        el("div", { class: "small", text: s.track + ": " + where + ", " + s.lengthSec + " s of " + min + " s minimum" })
+      ]));
+    });
+  }
+
+  /** The bottom camera stays whole by default; turning that off shows as a change under Advanced. */
+  function renderLayered() {
+    var off = load("layered", true) === false;
+    $("layeredNote").classList.toggle("hidden", !off);
+    if (off) $("timelineGroup").open = true;
+    countAdvanced();
+  }
+
+  /** "Advanced (3 changed)": so tweaks hidden under the fold aren't forgotten. */
+  function countAdvanced() {
+    if (!state.config) return;
+    var base = D.styleFromPreset(state.config.preset, {}), n = 0;
+    UI.styleGroups.forEach(function (g) {
+      g.controls.forEach(function (d) { var v = state.config.style[d.key]; if (v !== undefined && v !== base[d.key]) n++; });
+    });
+    if (load("layered", true) === false) n++;
+    $("advancedCount").textContent = n ? n + " changed" : "";
+  }
+
+  function renderModeNote() {
+    var box = $("modeNote"); box.innerHTML = "";
+    var mode = D.PRESETS[state.config.preset] || D.PRESETS.balanced;
+    box.appendChild(document.createTextNode(mode.description || ""));
+    // Only once static cameras are in use (ticked Static under Cameras): check each person has one of their own.
+    var statics = state.config.cameras.filter(function (c) { return c.enabled !== false && c.static; });
+    if (mode.needs === "closeups" && statics.length) {
+      var missing = state.config.speakers.filter(function (sp) {
+        return sp.enabled !== false && !statics.some(function (c) { return c.shows.length === 1 && c.shows[0] === sp.id; });
+      });
+      if (missing.length) {
+        box.appendChild(el("div", { class: "warn", text: "No static close-up for " + missing.map(function (s) { return s.name; }).join(", ") +
+          ": they'll be shown on the wide or the follow cam. Under Cameras, tick Static and only that person on their camera." }));
+      }
+    }
+  }
+
+  /** One Feature slider per person: who gets more (or less) screen time. */
+  function renderFeature() {
+    var box = $("featureControls"); box.innerHTML = "";
+    var spk = state.config.speakers.filter(function (sp) { return sp.enabled !== false; });
+    if (spk.length < 2) return;
+    box.appendChild(endsRow("Feature", UI.featureControl.ends, UI.featureControl.help));
+    state.config.speakers.forEach(function (sp, i) {
+      if (sp.enabled === false) return;
+      var def = Object.assign({}, UI.featureControl, { label: sp.name });
+      var node = slider(def, sp.biasDb || 0, function (v) { sp.biasDb = v; node.classList.toggle("changed", v !== 0); changed(true); });
+      node.style.setProperty("--sw", colorOf(i));
+      if (sp.biasDb) node.classList.add("changed");
+      box.appendChild(node);
     });
   }
 
@@ -935,15 +1103,56 @@
     }, 400);
   }
 
+  /** Mic confidence: one meter per speaker, with what's wrong and where. Collapsible; remembers open/closed. */
+  function renderConfidence() {
+    var det = $("confBox"), list = $("confList"), conf = state.result && state.result.confidence;
+    det.classList.toggle("hidden", !(conf && conf.length));
+    if (!conf || !conf.length) return;
+    det.open = !!load("confOpen", false);
+    det.ontoggle = function () { store("confOpen", det.open); };
+    var byId = {}, idx = {};
+    state.config.speakers.forEach(function (sp, i) { byId[sp.id] = sp; idx[sp.id] = i; });
+    var worst = conf.slice().sort(function (a, b) { return a.score - b.score; })[0];
+    $("confSummary").textContent = worst.label === "good" ? "all good" :
+      (byId[worst.speakerId] ? byId[worst.speakerId].name : "?") + " " + worst.label + " (" + worst.score + ")";
+    $("confSummary").className = "conf-" + worst.label;
+    list.innerHTML = "";
+    conf.forEach(function (c) {
+      var sp = byId[c.speakerId]; if (!sp) return;
+      var fill = el("i", { class: "conf-" + c.label }); fill.style.width = Math.max(3, c.score) + "%";
+      var row = el("div", { class: "conf-row" }, [
+        el("div", { class: "conf-top" }, [
+          el("span", { class: "conf-name", text: sp.name }),
+          el("span", { class: "conf-meter" }, [fill]),
+          el("span", { class: "conf-score conf-" + c.label, text: c.score + " " + c.label })
+        ]),
+        el("div", { class: "muted small", text: "Level " + (c.levelGapDb ? c.levelGapDb + " dB vs loudest" : "loudest") +
+          " · separation " + c.separationDb + " dB · borderline " + c.borderlinePct + "%" + (c.missedSec >= 1 ? " · maybe missed " + Math.round(c.missedSec) + " s" : "") })
+      ]);
+      row.style.setProperty("--sw", colorOf(idx[c.speakerId]));
+      c.hints.forEach(function (h) { row.appendChild(el("div", { class: "small conf-hint", text: h })); });
+      if (c.weak.length) {
+        var spots = el("div", { class: "conf-weak small" }, [el("span", { class: "muted", text: "Weak: " })]);
+        c.weak.forEach(function (w) {
+          spots.appendChild(el("span", { class: "lock", text: fmt(w[0]) + "–" + fmt(w[1]), style: "cursor:pointer", title: "Jump there",
+            onclick: function () { seek(w[0]); } }));
+        });
+        row.appendChild(spots);
+      }
+      list.appendChild(row);
+    });
+  }
+
   function renderStats() {
     var box = $("stats"); box.innerHTML = "";
+    renderConfidence();
     if (!state.result) return;
     var s = state.result.stats;
     [[s.cuts, "cuts"], [s.cutsPerMinute, "cuts / min"], [s.avgShotSec + "s", "avg shot"], [s.longestShotSec + "s", "longest"]].forEach(function (p) {
       box.appendChild(el("div", { class: "stat" }, [el("b", { text: String(p[0]) }), el("span", { text: p[1] })]));
     });
     // Why the cuts happen: helps decide which setting to change.
-    var WHY = { speaker: "speaker changes", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
+    var WHY = { speaker: "speaker changes", "wide-turn": "turns on the wide", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
       hold: "holds", crosstalk: "talking over", cutaway: "monologue cutaways", "camera-move": "dolly moving", framing: "dolly on someone else",
       opening: "opening", "jump-cover": "cleanup cover", removed: "removed sections", locked: "your locks" };
     var reasons = Object.keys(s.reasons || {}).sort(function (a, b) { return s.reasons[b] - s.reasons[a]; });
@@ -1508,7 +1717,8 @@
     checkTools().then(function () { status("Tools re-checked.", "ok"); });
   };
   $("layered").checked = load("layered", true) !== false;
-  $("layered").onchange = function () { store("layered", this.checked); };
+  $("layered").onchange = function () { store("layered", this.checked); renderLayered(); renderCameras(); };
+  renderLayered();
   $("txPrompt").onchange = function () { store("txPrompt", $("txPrompt").value.trim()); };
   $("showName").onchange = function () {
     state.cleanupOpts.showName = $("showName").value.trim(); store("showName", state.cleanupOpts.showName); runCleanup();

@@ -62,6 +62,7 @@
     cutawaySec: 3.0,           // cutaway length
     // Angles
     angleVariety: "rotate",    // "first" | "rotate" | "random"  (speakers with several close-ups)
+    wideBias: 0,               // -1..1: negative keeps to close-ups, positive favours the wide (some turns play on it)
     // Moving cameras (dolly, slider, handheld, operated cams) — needs camera motion analysis
     steadyMaxPct: 1.2,         // below this much camera motion (% of frame width per second) = steady
     fastMinPct: 6,             // above this = a real move/reposition; never on air
@@ -77,45 +78,71 @@
     snapToFrames: true
   };
 
+  // Modes: a starting point for the whole style. "needs" flags a camera setup the mode relies on;
+  // "fast" modes allow close-ups under 2 s (the panel's Minimum close-up range follows it).
   var PRESETS = {
+    balanced: { label: "Balanced discussion", description: "The default: follows the conversation, wides on overlaps and long pauses.", style: {} },
     calm: {
-      label: "Calm (interview / long-form)",
+      label: "Calm discussion",
+      description: "Long, unhurried shots. Waits before switching, ignores small reactions, breaks long answers with the wide.",
       style: { reactionDelaySec: 0.8, minShotSec: 3.5, crosstalkMinSec: 1.6, wideAfterSilenceSec: 4,
                interjectionMode: "ignore", interjectionChance: 0.3, maxShotSec: 30, cutawayMode: "wide",
-               cutawaySec: 4, cutTimingSec: -0.05, holdSec: 0.9 }
+               cutawaySec: 4, cutTimingSec: -0.05, holdSec: 0.9, wideBias: 0.3 }
     },
-    balanced: { label: "Balanced (default)", style: {} },
     lively: {
-      label: "Lively (banter / comedy)",
+      label: "Lively discussion",
+      description: "Banter and back-and-forth: quick switches, plenty of reaction shots.",
+      fast: true,
       style: { reactionDelaySec: 0.25, minShotSec: 1.4, crosstalkMinSec: 0.7, wideAfterSilenceSec: 2,
                interjectionMode: "reaction", interjectionChance: 0.85, reactionShotSec: 1.3, maxShotSec: 12,
-               cutawayMode: "mix", cutawaySec: 2.4, cutTimingSec: -0.15, holdSec: 0.45 }
+               cutawayMode: "mix", cutawaySec: 2.4, cutTimingSec: -0.15, holdSec: 0.45, wideBias: -0.2 }
     },
-    social: {
-      label: "Social clips (fast)",
-      style: { reactionDelaySec: 0.15, minShotSec: 1.0, crosstalkMinSec: 0.6, wideAfterSilenceSec: 1.5,
-               openOnWideSec: 0, interjectionMode: "reaction", interjectionChance: 1, reactionShotSec: 1.0,
-               maxShotSec: 7, cutawayMode: "alternate", cutawaySec: 2, cutTimingSec: -0.18, holdSec: 0.35 }
+    rapid: {
+      label: "Rapid cutting",
+      description: "Cuts straight to whoever speaks or reacts, staying on close-ups. Needs a static close-up camera on each person.",
+      needs: "closeups", fast: true,
+      style: { reactionDelaySec: 0.2, minShotSec: 1.0, crosstalkMode: "loudest", crosstalkMinSec: 0.5, wideAfterSilenceSec: 0,
+               minWideSec: 2, openOnWideSec: 2, interjectionMode: "reaction", interjectionChance: 0.9, reactionShotSec: 1.1,
+               maxShotSec: 8, cutawayMode: "reaction", cutawaySec: 1.8, cutTimingSec: -0.15, holdSec: 0.35, wideBias: -0.7 }
+    },
+    interview: {
+      label: "Interview",
+      description: "A host asks, a guest answers at length. Holds on the answer, cuts to the host listening now and then. Raise the guest's Feature slider.",
+      style: { reactionDelaySec: 0.6, minShotSec: 2.5, crosstalkMode: "hold", crosstalkMinSec: 1.4, wideAfterSilenceSec: 4,
+               interjectionMode: "reaction", interjectionChance: 0.35, reactionShotSec: 1.8, maxShotSec: 20,
+               cutawayMode: "reaction", cutawaySec: 3, holdSec: 0.8 }
     },
     hostFocus: {
-      label: "Host focus (stay on speaker, few cutaways)",
+      label: "Stay on the speaker",
+      description: "Only cuts when the speaker changes: no cutaways, no reactions, no pause wides.",
       style: { reactionDelaySec: 0.6, minShotSec: 2.5, crosstalkMode: "loudest", wideAfterSilenceSec: 0,
-               interjectionMode: "ignore", maxShotSec: 0, openOnWideSec: 2 }
-    },
-    solo: {
-      label: "1 subject (solo host / monologue)",
-      style: { reactionDelaySec: 0.6, minShotSec: 3, crosstalkMode: "hold", wideAfterSilenceSec: 0, interjectionMode: "ignore",
-               maxShotSec: 20, cutawayMode: "mix", cutawaySec: 4, openOnWideSec: 3 }
+               interjectionMode: "ignore", maxShotSec: 0, openOnWideSec: 2, wideBias: -0.3 }
     },
     trio: {
-      label: "3 subjects",
-      style: { reactionDelaySec: 0.35, minShotSec: 1.8, crosstalkMinSec: 0.9, interjectionChance: 0.5, maxShotSec: 16,
+      label: "Three people",
+      description: "Balanced, tuned for three voices.",
+      style: { reactionDelaySec: 0.35, minShotSec: 2, crosstalkMinSec: 0.9, interjectionChance: 0.5, maxShotSec: 16,
                wideAfterSilenceSec: 3 }
     },
     panel: {
-      label: "4+ subjects (panel / roundtable)",
-      style: { reactionDelaySec: 0.35, minShotSec: 1.8, crosstalkMinSec: 0.7, wideAfterSilenceSec: 2.5, interjectionChance: 0.4,
-               maxShotSec: 15, cutawayMode: "wide", openOnWideSec: 4 }
+      label: "Roundtable (4+ people)",
+      description: "Busy tables: shorter shots, more wides to keep everyone in the picture.",
+      style: { reactionDelaySec: 0.35, minShotSec: 2, crosstalkMinSec: 0.7, wideAfterSilenceSec: 2.5, interjectionChance: 0.4,
+               maxShotSec: 15, cutawayMode: "wide", openOnWideSec: 4, wideBias: 0.2 }
+    },
+    solo: {
+      label: "Solo / monologue",
+      description: "One person talking: holds the shot, changes angle now and then to keep it moving.",
+      style: { reactionDelaySec: 0.6, minShotSec: 3, crosstalkMode: "hold", wideAfterSilenceSec: 0, interjectionMode: "ignore",
+               maxShotSec: 20, cutawayMode: "mix", cutawaySec: 4, openOnWideSec: 3 }
+    },
+    social: {
+      label: "Social clips",
+      description: "Very fast cutting for short vertical clips.",
+      fast: true,
+      style: { reactionDelaySec: 0.15, minShotSec: 1.0, crosstalkMinSec: 0.6, wideAfterSilenceSec: 1.5,
+               openOnWideSec: 0, interjectionMode: "reaction", interjectionChance: 1, reactionShotSec: 1.0,
+               maxShotSec: 7, cutawayMode: "alternate", cutawaySec: 2, cutTimingSec: -0.18, holdSec: 0.35, wideBias: -0.5 }
     }
   };
   /** Style preset that suits a given number of people on mic. */
@@ -123,7 +150,8 @@
 
   var DEFAULT_SPEAKER = {
     thresholdDb: null,      // null = auto-calibrate
-    biasDb: 0,              // priority: positive wins close calls, negative yields
+    biasDb: 0,              // feature, -10..10: positive = more screen time (wins close calls, switched to sooner,
+                            // shown reacting/listening more, cut away from less); negative = less
     minShotSec: null,       // override global minimum for this speaker's shots
     interjections: true,    // can this speaker's "yeah"/laughs trigger reaction shots
     reactionShots: true,    // may be shown listening (cutaways / reactions)
@@ -144,6 +172,32 @@
     var preset = PRESETS[name] || PRESETS.balanced;
     return merge(DEFAULT_STYLE, preset.style, overrides);
   }
+
+  /**
+   * wideBias leans the detailed settings toward the wide or the close-ups. Toward the wide, overlaps and pauses
+   * reach the wide sooner and it stays up longer; toward close-ups, they need longer and the strongest setting
+   * stays on the loudest voice when people talk over each other. (Turns played on the wide: buildShots.)
+   */
+  function applyWideBias(style) {
+    var b = clamp(Number(style.wideBias) || 0, -1, 1);
+    if (!b) return style;
+    var s = merge(style);
+    if (b > 0) {
+      s.crosstalkMinSec = style.crosstalkMinSec * (1 - 0.5 * b);
+      if (style.wideAfterSilenceSec > 0) s.wideAfterSilenceSec = style.wideAfterSilenceSec * (1 - 0.5 * b);
+      s.minWideSec = (style.minWideSec || 0) * (1 + 0.6 * b);
+    } else {
+      var k = -b;
+      s.crosstalkMinSec = style.crosstalkMinSec * (1 + 1.5 * k);
+      if (style.wideAfterSilenceSec > 0) s.wideAfterSilenceSec = style.wideAfterSilenceSec * (1 + 2 * k);
+      s.minWideSec = (style.minWideSec || 0) * (1 - 0.6 * k);
+      if (k >= 0.75 && style.crosstalkMode === "wide") s.crosstalkMode = "loudest";
+    }
+    return s;
+  }
+
+  /** A speaker's feature setting (biasDb) as -1..1. */
+  function featureOf(sp) { return clamp((Number(sp && sp.biasDb) || 0) / 10, -1, 1); }
 
   // ------------------------------------------------------------------ utils
 
@@ -342,11 +396,12 @@
     });
     segs = mergeSegs(out);
 
-    // Reaction delay: a speaker change that doesn't last long enough isn't a switch.
-    var delay = Math.round(style.reactionDelaySec * fr);
+    // Reaction delay: a speaker change that doesn't last long enough isn't a switch. Featured speakers are switched to sooner.
     for (i = 1; i < segs.length; i++) {
       var sgm = segs[i];
-      if (sgm.kind === "solo" && sgm.end - sgm.start < delay) {
+      if (sgm.kind !== "solo") continue;
+      var delay = Math.round(style.reactionDelaySec * (1 - 0.5 * featureOf(speakers[sgm.speakers[0]])) * fr);
+      if (sgm.end - sgm.start < delay) {
         // keep only if the speaker keeps talking after a brief hold (handled by merge)
         var after = segs[i + 1];
         var continues = after && after.kind === "hold" && segs[i + 2] && segs[i + 2].kind === "solo" &&
@@ -429,13 +484,22 @@
       return list[rotation[si]];
     }
 
+    // Toward the wide, a share of speaker turns plays on it (own RNG so other random choices don't shift).
+    var wideShare = ci.hasWide ? Math.max(0, Number(style.wideBias) || 0) * 0.5 : 0;
+    var wideRand = rng((style.seed || 1) + 7919);
+    var minTurn = Math.round(Math.max(style.minShotSec, 2) * ctx.fr);
+
     segs.forEach(function (sg) {
       var cam = null, reason = sg.kind;
       if (sg.kind === "solo") {
         var si = sg.speakers[0];
         var already = current && current.speakers && current.speakers.length === 1 && current.speakers[0] === si;
-        cam = already ? current.cameraId : closeupFor(si, current && current.cameraId);
         reason = "speaker";
+        if (already) { cam = current.cameraId; reason = current.reason === "wide-turn" ? "wide-turn" : "speaker"; }
+        else if (wideShare > 0 && sg.end - sg.start >= minTurn &&
+                 wideRand() < wideShare * (1 - 0.5 * Math.max(0, featureOf(speakers[si])))) {
+          cam = ci.widest; reason = "wide-turn";
+        } else cam = closeupFor(si, current && current.cameraId);
       } else if (sg.kind === "group") {
         reason = "crosstalk";
         if (style.crosstalkMode === "wide") cam = ci.cover(sg.speakers) || ci.widest;
@@ -483,7 +547,7 @@
           (last.reason === "reaction") === (s.reason === "reaction")) {
         last.end = s.end;
         // A shot that opens on a breath or overlap but settles on one speaker is a speaker shot.
-        if ((last.reason === "pause" || last.reason === "hold" || last.reason === "crosstalk") && s.reason === "speaker") {
+        if ((last.reason === "pause" || last.reason === "hold" || last.reason === "crosstalk") && (s.reason === "speaker" || s.reason === "wide-turn")) {
           last.reason = s.reason; last.speakers = s.speakers.slice();
         } else if (last.reason === "speaker" && s.reason === "speaker") {
           // e.g. a follow cam that stays up across a change of speaker
@@ -533,7 +597,7 @@
     interj.forEach(function (ij) {
       var sp = speakers[ij.speaker];
       if (!sp.interjections) return;
-      if (ctx.rand() > style.interjectionChance) return;
+      if (ctx.rand() > style.interjectionChance * (1 + featureOf(sp))) return;
       var host = shotAt(shots, ij.start);
       if (!host || host.locked || host.reason === "crosstalk" || host.reason === "pause") return;
       if (host.speakers.length === 1 && host.speakers[0] === ij.speaker) return; // already on them
@@ -559,14 +623,17 @@
   function applyCutaways(shots, speakers, style, ctx) {
     if (!(style.maxShotSec > 0)) return shots;
     var fr = ctx.fr;
-    var maxLen = Math.round(style.maxShotSec * fr);
     var cutLen = Math.round(style.cutawaySec * fr);
     var minShot = Math.round(style.minShotSec * fr);
     var result = [];
     var pick = 0;
     shots.forEach(function (s) {
       var length = s.end - s.start;
-      if (s.locked || s.reason !== "speaker" || length <= maxLen) { result.push(s); return; }
+      var onWide = s.reason === "wide-turn";
+      // Featured speakers are cut away from less (up to twice as long between cutaways).
+      var f = s.speakers.length === 1 ? featureOf(speakers[s.speakers[0]]) : 0;
+      var maxLen = Math.round(style.maxShotSec * (f > 0 ? 1 + f : 1 + 0.5 * f) * fr);
+      if (s.locked || (s.reason !== "speaker" && !onWide) || length <= maxLen) { result.push(s); return; }
       var count = Math.floor(length / maxLen);
       var cursor = s.start;
       var first = true;
@@ -574,7 +641,8 @@
         var target = s.start + Math.round(length * k / (count + 1)) - (cutLen >> 1);
         var at = quietestFrame(ctx, target, cursor + minShot, s.end - minShot - cutLen);
         if (at === null) continue;
-        var cam = cutawayCamera(s, speakers, style, ctx, pick++);
+        // A turn played on the wide breaks to the speaker's close-up instead.
+        var cam = onWide ? ctx.ci.closeups(s.speakers[0])[0] : cutawayCamera(s, speakers, style, ctx, pick++);
         if (!cam || cam === s.cameraId) continue;
         var left = copyShot(s); left.start = cursor; left.end = at; left.onset = first && s.onset; first = false;
         result.push(left);
@@ -590,14 +658,23 @@
   function cutawayCamera(s, speakers, style, ctx, n) {
     var ci = ctx.ci;
     var si = s.speakers[0];
-    var listeners = [];
+    var listeners = [], weights = [], total = 0;
     for (var i = 0; i < speakers.length; i++) {
-      if (i !== si && speakers[i].reactionShots !== false && ci.fixedCloseups(i).length) listeners.push(i);
+      if (i !== si && speakers[i].reactionShots !== false && ci.fixedCloseups(i).length) {
+        // Featured listeners are picked more often (up to 3x), played-down ones less.
+        var w = Math.pow(3, featureOf(speakers[i]));
+        listeners.push(i); weights.push(w); total += w;
+      }
+    }
+    var listener = null;
+    if (listeners.length) {
+      var r = ctx.rand() * total;
+      for (var j = 0; j < listeners.length; j++) { r -= weights[j]; if (r < 0 || j === listeners.length - 1) { listener = listeners[j]; break; } }
     }
     var alt = ci.closeups(si).filter(function (id) { return id !== s.cameraId; });
     var options = {
       wide: ci.hasWide ? ci.widest : null,
-      reaction: listeners.length ? ci.fixedCloseups(listeners[Math.floor(ctx.rand() * listeners.length)])[0] : null,
+      reaction: listener !== null ? ci.fixedCloseups(listener)[0] : null,
       alternate: alt.length ? alt[n % alt.length] : null
     };
     var order;
@@ -949,7 +1026,7 @@
   // ------------------------------------------------------ 10c. cut cap
 
   // Which shots can be dropped when there are too many cuts, least important first.
-  var DROP_ORDER = { reaction: 0, "interjection-wide": 0, pause: 1, hold: 1, cutaway: 2, crosstalk: 3, opening: 4, speaker: 5 };
+  var DROP_ORDER = { reaction: 0, "interjection-wide": 0, pause: 1, hold: 1, cutaway: 2, crosstalk: 3, opening: 4, speaker: 5, "wide-turn": 5 };
 
   /** Keep every 60 s window at or under maxCutsPerMin cuts by folding the least important shots into a neighbour. */
   function applyCutCap(shots, style, ctx) {
@@ -1012,7 +1089,7 @@
    *             preset: "balanced", style: {...overrides}, overrides: [{startSec,endSec,cameraId}] }
    */
   function plan(input, config) {
-    var style = styleFromPreset(config.preset, config.style);
+    var style = applyWideBias(styleFromPreset(config.preset, config.style));
     var hop = input.hopSec;
     var fr = 1 / hop; // analysis frames per second
     var frames = Math.max(1, Math.ceil(input.durationSec / hop));
@@ -1074,9 +1151,91 @@
         return { speakerId: speakers[ij.speaker].id, startSec: round3(ij.start * hop), endSec: round3(ij.end * hop) };
       }),
       stats: computeStats(outShots, runs, speakers, cameras, input.durationSec, hop),
+      confidence: computeConfidence(curves, speakers, cal, raw, runs, fr, frames),
       stability: ctx.stability.info,
       style: style
     };
+  }
+
+  /**
+   * How well each mic picks up its speaker (mic discipline): a 0..100 score per speaker and the measures behind it.
+   *   levelGapDb     their speech level vs the loudest mic (quiet = too far from the mic)
+   *   separationDb   their voice on their mic vs the others' voices on it (low = bleed, hard to tell apart)
+   *   borderlinePct  share of their speech that only just clears the threshold
+   *   missedSec      silence (nobody detected) where their mic sat just under the threshold: likely missed speech
+   *   weak           stretches where their speech ran well below their usual level (leaning back, turning away)
+   */
+  function computeConfidence(curves, speakers, cal, raw, runs, fr, frames) {
+    var n = speakers.length;
+    var loudest = -Infinity;
+    cal.forEach(function (c) { if (c.speechDb > loudest) loudest = c.speechDb; });
+    // Talking (raw) and within anyone's turn (runs bridge the gaps between words, which aren't missed speech).
+    var anyActive = new Uint8Array(frames), anyTurn = new Uint8Array(frames);
+    for (var s = 0; s < n; s++) {
+      for (var t = 0; t < frames; t++) if (raw[s][t]) anyActive[t] = 1;
+      runs[s].forEach(function (r) { for (var k0 = r[0]; k0 < Math.min(r[1], frames); k0++) anyTurn[k0] = 1; });
+    }
+    var stride = Math.max(1, Math.floor(frames / 40000));
+    var win = Math.round(30 * fr);
+    return speakers.map(function (sp, si) {
+      var c = curves[sp.id] || [], th = cal[si].thresholdDb;
+      var own = [], others = [], border = 0, active = 0, missed = 0;
+      var inRun = new Uint8Array(frames);
+      runs[si].forEach(function (r) { for (var k = r[0]; k < Math.min(r[1], frames); k++) inRun[k] = 1; });
+      for (var t2 = 0; t2 < frames; t2++) {
+        var db = t2 < c.length ? c[t2] : SILENT_DB;
+        if (raw[si][t2]) {
+          active++;
+          if (db - th < 4) border++;
+          if (t2 % stride === 0) own.push(db);
+        } else if (anyActive[t2]) {
+          if (t2 % stride === 0) others.push(db);
+        } else if (!anyTurn[t2] && db > th - 6 && db > cal[si].floorDb + 10) missed++;
+      }
+      var ownDb = percentile(own, 0.5), otherDb = others.length ? percentile(others, 0.5) : cal[si].floorDb;
+      // Weak stretches: a minute or more (consecutive 30 s windows) where the speech they did get ran 10 dB+ under
+      // their usual level. Shorter or smaller dips are just how people talk (tuned on real episodes).
+      var weak = [];
+      for (var w0 = 0; w0 < frames; w0 += win) {
+        var vals = [];
+        for (var k2 = w0; k2 < Math.min(frames, w0 + win); k2++) if (inRun[k2] && k2 < c.length) vals.push(c[k2]);
+        if (vals.length < 3 * fr || percentile(vals, 0.5) > ownDb - 10) continue;
+        var last = weak[weak.length - 1];
+        if (last && last[1] === w0) last[1] = Math.min(frames, w0 + win); else weak.push([w0, Math.min(frames, w0 + win)]);
+      }
+      weak = weak.filter(function (r) { return r[1] - r[0] >= 2 * win - 1; });
+      var weakFrames = weak.reduce(function (a, r) { return a + r[1] - r[0]; }, 0);
+      var m = {
+        levelGapDb: round1(Math.min(0, cal[si].speechDb - loudest)),
+        separationDb: round1(own.length ? ownDb - otherDb : 0),
+        borderlinePct: Math.round(100 * border / Math.max(1, active)),
+        missedSec: round1(missed / fr),
+        activeSec: round1(active / fr)
+      };
+      // Weights and ranges tuned on 41 real episodes (Zoom F6, SM58 then SM7B). Separation carries the score: well
+      // mic'd hosts sit at 25-30 dB, a speaker sitting back from the mic with a loud neighbour falls to 10-14 dB.
+      // Level mostly reflects recorder gain, not mic discipline, so it counts little.
+      var parts = {
+        level: clamp(1 + m.levelGapDb / 24, 0, 1),
+        separation: clamp((m.separationDb - 8) / 14, 0, 1),
+        border: clamp(1 - m.borderlinePct / 40, 0, 1),
+        missed: clamp(1 - 4 * missed / Math.max(1, active), 0, 1),
+        weak: clamp(1 - 3 * weakFrames / Math.max(1, frames), 0, 1)
+      };
+      var score = active ? Math.round(100 * (0.6 * parts.separation + 0.1 * parts.border + 0.1 * parts.missed + 0.05 * parts.level + 0.15 * parts.weak)) : 0;
+      var hints = [];
+      if (!active) hints.push("No speech detected on this mic. Check its track and channel.");
+      else {
+        if (parts.separation < 0.5) hints.push("The others come through their mic almost as loudly as they do (sitting back from the mic, or a loud neighbour), so cuts to them can be wrong or late. Check their stretches by hand; lowering Bleed rejection can help.");
+        if (m.levelGapDb < -15) hints.push("Much quieter than the loudest mic: check the recorder gain on this channel, or they're far from the mic. If they're being missed, lower their Threshold.");
+        if (parts.missed < 0.7) hints.push("About " + Math.round(m.missedSec) + " s of possible speech fell just under the threshold. Lower their Threshold a few dB.");
+        if (parts.border < 0.4) hints.push("A lot of their speech only just clears the threshold; quieter words may be missed.");
+        if (weak.length) hints.push("Their level dropped noticeably in " + weak.length + (weak.length === 1 ? " stretch" : " stretches") + " (turned away or leaned back?). Check the cut there.");
+      }
+      return { speakerId: sp.id, score: score, label: score >= 75 ? "good" : score >= 55 ? "fair" : "poor", parts: parts,
+               levelGapDb: m.levelGapDb, separationDb: m.separationDb, borderlinePct: m.borderlinePct, missedSec: m.missedSec,
+               weak: weak.map(function (r) { return [round3(r[0] / fr), round3(r[1] / fr)]; }), hints: hints };
+    });
   }
 
   function computeStats(shots, runs, speakers, cameras, duration, hop) {
@@ -1106,6 +1265,47 @@
       talkTimePct: talk,
       reasons: reasons
     };
+  }
+
+  /**
+   * Content cuts in a camera track: places where the next clip doesn't carry on from where the previous one left
+   * off in the source (another file, or a jump in time), i.e. footage was removed. Returns the stretches between
+   * content cuts that are shorter than minSec, inside [rangeStart, rangeEnd] if given. Splits that keep the
+   * source continuous (razors from a previous build) and gaps or the ends of the track/range are not cuts.
+   *   clips: [{ startSec, endSec, inPointSec, mediaPath, speed }]
+   *   -> [{ startSec, endSec, lengthSec, cutBefore, cutAfter }]
+   */
+  function shortSections(clips, minSec, opts) {
+    opts = opts || {};
+    var tol = 1.5 / (opts.fps || 30);
+    var lo = opts.rangeStart || 0, hi = opts.rangeEnd === undefined || opts.rangeEnd === null ? Infinity : opts.rangeEnd;
+    var list = (clips || []).filter(function (c) { return c.endSec > c.startSec; })
+      .slice().sort(function (a, b) { return a.startSec - b.startSec; });
+    var pieces = [], cur = null;
+    list.forEach(function (c, i) {
+      var prev = list[i - 1], cut = false, joined = false;
+      if (prev && Math.abs(c.startSec - prev.endSec) <= tol) {
+        joined = true;
+        var speed = Math.abs(Number(prev.speed) || 1);
+        var expected = prev.inPointSec + (prev.endSec - prev.startSec) * speed;
+        cut = c.mediaPath !== prev.mediaPath || Math.abs(c.inPointSec - expected) > tol * Math.max(1, speed);
+      }
+      if (cur && joined && !cut) { cur.endSec = c.endSec; return; }
+      if (cur) { cur.cutAfter = cut; pieces.push(cur); }
+      cur = { startSec: c.startSec, endSec: c.endSec, cutBefore: cut, cutAfter: false };
+    });
+    if (cur) pieces.push(cur);
+    var out = [];
+    pieces.forEach(function (p) {
+      var a = Math.max(p.startSec, lo), b = Math.min(p.endSec, hi);
+      if (b <= a) return;
+      // A cut only counts inside the range; the range edges (In/Out) aren't cuts.
+      var before = p.cutBefore && p.startSec > lo + tol, after = p.cutAfter && p.endSec < hi - tol;
+      if ((before || after) && b - a < minSec - 1e-6) {
+        out.push({ startSec: round3(a), endSec: round3(b), lengthSec: round1(b - a), cutBefore: before, cutAfter: after });
+      }
+    });
+    return out;
   }
 
   /** Per video track: which ranges are enabled. Boundaries are video frame numbers. */
@@ -1139,6 +1339,7 @@
     r.shots[r.shots.length - 1].endSec = round3(b);
     r.speech.forEach(function (sp) { sp.runs = sp.runs.map(function (x) { return [sh(x[0]), sh(x[1])]; }); });
     r.interjections.forEach(function (ij) { ij.startSec = sh(ij.startSec); ij.endSec = sh(ij.endSec); });
+    r.confidence.forEach(function (c) { c.weak = c.weak.map(function (x) { return [sh(x[0]), sh(x[1])]; }); });
     Object.keys(r.stability || {}).forEach(function (k) { r.stability[k].offsetSec = a; });
     r.range = { startSec: a, endSec: b };
     return r;
@@ -1206,11 +1407,12 @@
   }
 
   return {
-    VERSION: "0.6.0",
+    VERSION: "0.7.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
     styleFromPreset: styleFromPreset,
+    shortSections: shortSections,
     presetForSubjects: presetForSubjects,
     plan: plan,
     planRange: planRange,
