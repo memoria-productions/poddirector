@@ -141,9 +141,13 @@
     var p = inPremiere ? callHost("getSequenceInfo") : Promise.resolve(window.PD_DEMO.sequence());
     return p.then(function (info) {
       var changed = !state.seq || state.seq.sequenceID !== info.sequenceID;
-      state.seq = info;
+      state.seq = expandNests(info);
       $("seqLabel").textContent = info.name + " · " + info.fps.toFixed(2) + " fps · " + fmt(info.durationSec);
-      log("Sequence " + info.name + ": " + info.audioTracks.length + " audio, " + info.videoTracks.length + " video tracks, " + fmt(info.durationSec));
+      log("Sequence " + info.name + ": " + info.audioTracks.length + " audio, " + info.videoTracks.filter(function (v) { return !v.virtual; }).length + " video tracks, " + fmt(info.durationSec));
+      info.videoTracks.forEach(function (v) {
+        if (v.nest) log("V" + (v.index + 1) + " holds the " + (v.nest.multicam ? "multicam" : "nested") + " sequence “" + v.nest.name + "” with " +
+          v.nest.angles.length + " angle(s): " + v.nest.angles.map(function (a) { return a.angle + " = " + a.name + " (" + a.clips.length + " clips)"; }).join(", "));
+      });
       if (changed) {
         var saved = load("seq." + info.name, null);
         var last = load("lastSetup", null), lastSetup = last ? userSetups()[last] : null;
@@ -174,7 +178,47 @@
 
   function validConfig(c, info) {
     return c.speakers && c.cameras && c.speakers.every(function (s) { return s.audioTrack < info.audioTracks.length; }) &&
-      c.cameras.every(function (cm) { return cm.videoTrack < info.videoTracks.length; });
+      c.cameras.every(function (cm) { return !!vtrackIn(info, cm.videoTrack); });
+  }
+
+  // ------------------------------------------------------- multicam nests
+  // A nested (multicam) sequence on a video track: each of its angles becomes a virtual camera track, numbered
+  // NEST_BASE + outer track * 16 + angle, with the angle's clips mapped onto this timeline. They're analyzed like
+  // stacked camera tracks (movement, who's in the shot) and built with Build as multicam.
+  var NEST_BASE = 100;
+  function expandNests(info) {
+    info.videoTracks.slice().forEach(function (v) {
+      if (!v.nest) return;
+      v.nestOuter = true;
+      v.nest.angles.forEach(function (a) {
+        var media = []; a.clips.forEach(function (c) { if (c.mediaPath && media.indexOf(c.mediaPath) < 0) media.push(c.mediaPath); });
+        info.videoTracks.push({ index: NEST_BASE + v.index * 16 + a.angle, virtual: true, nestTrack: v.index, angle: a.angle,
+          angleName: a.name && !/^(video|v)\s*\d+$/i.test(a.name) ? a.name : null,
+          name: "nest angle " + a.angle + (a.name && !/^(video|v)\s*\d+$/i.test(a.name) ? " (" + a.name + ")" : ""),
+          clipCount: a.clips.length, clips: a.clips, mediaPaths: media, firstClip: media.length ? media[0].split(/[\\/]/).pop() : null,
+          endSec: a.clips.reduce(function (m, c) { return Math.max(m, c.endSec); }, 0) });
+      });
+    });
+    return info;
+  }
+  function vtrackIn(info, idx) { return info.videoTracks.filter(function (v) { return v.index === idx; })[0] || null; }
+  function vtrack(idx) { return state.seq ? vtrackIn(state.seq, idx) : null; }
+  function nestAngleTracks() { return state.seq ? state.seq.videoTracks.filter(function (v) { return v.virtual; }) : []; }
+  function usesNest() { return state.config.cameras.some(function (c) { return c.enabled !== false && c.videoTrack >= NEST_BASE; }); }
+
+  /** Point the cameras at the nest's angles, in track order (bottom camera = angle 1), keeping their settings. */
+  function useNestAngles() {
+    var angles = nestAngleTracks();
+    if (!angles.length) return;
+    var cams = state.config.cameras.filter(function (c) { return c.videoTrack < NEST_BASE; }).sort(function (a, b) { return a.videoTrack - b.videoTrack; });
+    cams.forEach(function (c, i) {
+      var t = angles[i];
+      if (t) { c.videoTrack = t.index; c.angle = t.angle; } else c.enabled = false;
+    });
+    state.motion = {}; state.framing = {};
+    renderCameras(); renderStyle(); changed();
+    status("Cameras now read the nest's angles: " + cams.filter(function (c) { return c.angle; }).map(function (c) { return c.name + " = angle " + c.angle; }).join(", ") +
+      ". Analyze again to check the dolly for movement.", "ok");
   }
 
   var NON_VOICE = /(^|[^a-z])(sfx|fx|music|mus|bed|beds|mix|mixdown|master|room|amb|ambience|ambient|nat|stinger|stem|stems|bgm|song|intro|outro|scratch|camera|cam)([^a-z]|$)/i;
@@ -290,13 +334,16 @@
     });
     if (subjects) cfg.preset = D.presetForSubjects(cfg.speakers.length);
     fixChannels(cfg, info);
-    var vids = info.videoTracks.filter(function (v) { return v.clipCount > 0; });
+    // A multicam nest's angles stand in for the cameras when there is one (the nest track itself isn't a camera).
+    var vids = info.videoTracks.filter(function (v) { return v.clipCount > 0 && v.virtual; });
+    if (!vids.length) vids = info.videoTracks.filter(function (v) { return v.clipCount > 0 && !v.virtual; });
     var GENERIC = { mic: 1, microphone: 1, audio: 1, lav: 1, track: 1, speaker: 1, cam: 1, camera: 1 };
     function tokens(n) { return n.toLowerCase().split(/[^a-z0-9]+/).filter(function (w) { return w && !GENERIC[w] && !/^\d+$/.test(w); }); }
     var allIds = cfg.speakers.map(function (s) { return s.id; });
     var next = 0;
     vids.forEach(function (v, i) {
-      var nm = (v.name && !/^(video|v)\s*\d+$/i.test(v.name)) ? v.name : (v.firstClip || ("V" + (v.index + 1)));
+      var nm = v.virtual ? (v.angleName || v.firstClip || "Angle " + v.angle)
+        : (v.name && !/^(video|v)\s*\d+$/i.test(v.name)) ? v.name : (v.firstClip || ("V" + (v.index + 1)));
       var words = tokens(nm);
       var shows;
       var byName = cfg.speakers.filter(function (s) { return tokens(s.name).some(function (w) { return words.indexOf(w) >= 0; }); });
@@ -308,7 +355,7 @@
       var moving = /dolly|slider|jib|crane|handheld|hand-held|gimbal|steadicam|roam|rover|moving|operat|follow|track/i.test(nm);
       var follows = i > 0 && /follow|roam|rover|operat/i.test(nm);
       cfg.cameras.push({ id: "C" + (i + 1), name: nm.replace(/\.[a-z0-9]{2,4}$/i, ""), videoTrack: v.index, shows: follows ? [] : shows,
-        moving: moving, follows: follows, enabled: true });
+        moving: moving, follows: follows, enabled: true, angle: v.virtual ? v.angle : undefined });
     });
     // One wide plus a single moving camera, several speakers: that camera is almost certainly
     // operated to follow whoever is talking.
@@ -354,8 +401,9 @@
           interjections: sp.interjections, reactionShots: sp.reactionShots, enabled: sp.enabled };
       }),
       cameras: c.cameras.map(function (cm) {
-        return { name: cm.name, trackName: info.videoTracks[cm.videoTrack] ? info.videoTracks[cm.videoTrack].name : null, videoTrack: cm.videoTrack,
-          shows: cm.shows.map(function (id) { return nameOf[id]; }).filter(Boolean), moving: !!cm.moving, follows: !!cm.follows, static: !!cm.static, enabled: cm.enabled };
+        return { name: cm.name, trackName: vtrackIn(info, cm.videoTrack) ? vtrackIn(info, cm.videoTrack).name : null, videoTrack: cm.videoTrack,
+          shows: cm.shows.map(function (id) { return nameOf[id]; }).filter(Boolean), moving: !!cm.moving, follows: !!cm.follows, static: !!cm.static, enabled: cm.enabled,
+          angle: cm.angle };
       })
     };
   }
@@ -365,7 +413,7 @@
       var n = String(name).trim().toLowerCase();
       for (var i = 0; i < list.length; i++) if (String(list[i].name).trim().toLowerCase() === n) return list[i].index;
     }
-    return index < list.length ? index : -1;
+    return list.some(function (t) { return t.index === index; }) ? index : -1; // virtual nest-angle tracks aren't at their own position
   }
   function setupMatches(setup, info) {
     return setup.speakers.every(function (s) { return s.trackName && findTrack(info.audioTracks, s.trackName, -1) >= 0; }) &&
@@ -388,7 +436,7 @@
       var t = findTrack(info.videoTracks, c.trackName, c.videoTrack);
       if (t < 0) { missing.push(c.name + " (" + c.trackName + ")"); return; }
       cfg.cameras.push({ id: "C" + (i + 1), name: c.name, videoTrack: t, shows: (c.shows || []).map(function (n) { return idByName[n]; }).filter(Boolean),
-        moving: !!c.moving, follows: !!c.follows, static: !!c.static, enabled: c.enabled !== false });
+        moving: !!c.moving, follows: !!c.follows, static: !!c.static, enabled: c.enabled !== false, angle: c.angle });
     });
     cfg._missing = missing;
     return cfg;
@@ -501,7 +549,10 @@
   function trackOptions(kind) {
     if (!state.seq) return [];
     var list = kind === "audio" ? state.seq.audioTracks : state.seq.videoTracks;
-    return list.map(function (t) { return [t.index, (kind === "audio" ? "A" : "V") + (t.index + 1) + (t.name && !/^(audio|video|a|v)\s*\d+$/i.test(t.name) ? " · " + t.name : "")]; });
+    return list.map(function (t) {
+      if (t.virtual) return [t.index, "V" + (t.nestTrack + 1) + " " + t.name];
+      return [t.index, (kind === "audio" ? "A" : "V") + (t.index + 1) + (t.name && !/^(audio|video|a|v)\s*\d+$/i.test(t.name) ? " · " + t.name : "") + (t.nestOuter ? " (multicam nest)" : "")];
+    });
   }
   function select(options, value, onchange, cls) {
     var s = el("select", { class: cls || "", onchange: function () { onchange(s.value); } });
@@ -590,8 +641,9 @@
       var role = cm.follows ? "follows speaker" : cm.shows.length === 0 ? "unused" : cm.shows.length === 1 ? "close-up" : (cm.shows.length === spk.length ? "wide" : cm.shows.length + "-shot");
       if (cm.static) role = "static " + role;
       if (cm.moving) role += " \u00B7 movement check";
-      var isBottom = cm.enabled !== false && !state.config.cameras.some(function (o) { return o !== cm && o.enabled !== false && o.videoTrack < cm.videoTrack; });
+      var isBottom = cm.enabled !== false && cm.videoTrack < NEST_BASE && !state.config.cameras.some(function (o) { return o !== cm && o.enabled !== false && o.videoTrack < cm.videoTrack; });
       if (isBottom && state.config.cameras.length > 1 && load("layered", true) !== false) role += " \u00B7 bottom, kept whole";
+      if (cm.videoTrack >= NEST_BASE) role += " \u00B7 multicam angle " + (cm.angle || (cm.videoTrack - NEST_BASE) % 16);
       var vt = state.seq && state.seq.videoTracks.filter(function (v) { return v.index === cm.videoTrack; })[0];
       if (vt && vt.hidden && cm.enabled !== false) role += " \u00B7 eye off in the sequence (the cut turns it on)";
       row.appendChild(el("div", { class: "row-main" }, [
@@ -638,6 +690,16 @@
   function renderV1Warning() {
     var box = $("v1Warn"), q = state.seq;
     var problems = [];
+    // A multicam nest: the angles are the cameras, so the stacked-track V1 checks don't apply.
+    var angles = nestAngleTracks();
+    if (q && angles.length && !usesNest()) {
+      box.innerHTML = ""; box.classList.remove("hidden");
+      box.appendChild(el("b", { text: "⚠ V" + (angles[0].nestTrack + 1) + " holds a multicam nest with " + angles.length + " angles. " }));
+      box.appendChild(document.createTextNode("Your cameras still point at stacked tracks, so the dolly can't be checked for movement. "));
+      box.appendChild(el("button", { class: "btn small primary", text: "Use the nest's angles as cameras", onclick: useNestAngles }));
+      return;
+    }
+    if (q && usesNest()) { box.innerHTML = ""; box.classList.add("hidden"); return; }
     if (q && state.config.cameras.length) {
       var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
       var v1 = state.config.cameras.filter(function (c) { return c.enabled !== false && c.videoTrack === 0; })[0];
@@ -962,7 +1024,7 @@
     var cams = state.config.cameras.filter(function (c) { return c.moving && c.enabled !== false && !state.motion[motionKey(c)]; });
     return cams.reduce(function (p, c, i) {
       return p.then(function () {
-        var track = state.seq.videoTracks[c.videoTrack], t0 = Date.now();
+        var track = vtrack(c.videoTrack), t0 = Date.now();
         if (!track || !track.clips) return;
         return window.PodMotion.analyzeTrack(track, state.seq.durationSec, { ffmpegPath: state.tools.ffmpeg, onProgress: function (f) {
           status("Checking " + c.name + " for camera movement\u2026 " + Math.round(f * 100) + "%" + (cams.length > 1 ? " (" + (i + 1) + "/" + cams.length + ")" : ""), "", f);
@@ -1294,7 +1356,31 @@
     return r && r.shown && r.shown.length ? "; turned on " + r.shown.map(function (t) { return "V" + (t + 1); }).join(", ") + ", which had its eye off" : "";
   }
 
+  // ------------------------------------------------- camera 2 in Rose
+  var ROSE = 6; // Premiere's label colours: Violet 0, Iris 1, Caribbean 2, Lavender 3, Cerulean 4, Forest 5, Rose 6, …
+  function angleOfCam(c) { return c.angle || (c.videoTrack < NEST_BASE ? c.videoTrack + 1 : (c.videoTrack - NEST_BASE) % 16); }
+
+  /** Label the camera 2 shots Rose on a built sequence (when the option is on). ranges: [[a, b]] in sequence time. */
+  function labelCamera2(seqId, track, ranges) {
+    if (!$("rose2").checked || !ranges.length) return Promise.resolve(null);
+    return callHostWithin(20000, "colorClips", [JSON.stringify({ sequenceID: seqId, track: track, ranges: ranges, color: ROSE })]).then(function (r) {
+      if (r.unsupported) log("This Premiere doesn't let scripts set clip label colours" + (r.error ? " (" + r.error + ")" : "") + ", so camera 2 shots weren't labelled.");
+      else log("Labelled " + r.colored + " camera 2 shots Rose.");
+      return r;
+    }, function (e) { log("Couldn't label camera 2 shots: " + e.message); return null; });
+  }
+  /** Camera 2 stretches of the planned cut, and the stacked track that camera is on. */
+  function camera2Shots() {
+    var cams = {}; state.config.cameras.forEach(function (c) { cams[c.id] = c; });
+    var cam2 = state.config.cameras.filter(function (c) { return c.enabled !== false && angleOfCam(c) === 2 && c.videoTrack < NEST_BASE; })[0];
+    if (!cam2 || !state.result) return null;
+    return { track: cam2.videoTrack, ranges: state.result.shots.filter(function (s) { return cams[s.cameraId] && angleOfCam(cams[s.cameraId]) === 2; })
+      .map(function (s) { return [s.startSec, s.endSec]; }) };
+  }
+  function roseNote(r) { return r && !r.unsupported && r.colored ? "; " + r.colored + " camera 2 shots labelled Rose" : ""; }
+
   function currentPayload() {
+    if (usesNest()) throw new Error("Your cameras are angles inside a multicam nest: use Build as multicam. (Build cut on a copy and Recut switch stacked camera tracks.)");
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
     return D.toEditPayload(state.result, cams, state.seq.fps, { layered: load("layered", true) !== false });
   }
@@ -1307,9 +1393,12 @@
       newSeq = r; log("Created " + r.name);
       return writeCut(newSeq.sequenceID, payload, "Cutting");
     }).then(function (r) {
-      rememberCut(orig, newSeq, payload, state.result.stats, true);
-      renderRecut();
-      status("Done: \u201C" + newSeq.name + "\u201D has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched" + shownNote(r) + "). Your original is untouched.", "ok", 1);
+      var c2 = camera2Shots();
+      return (c2 ? labelCamera2(newSeq.sequenceID, c2.track, c2.ranges) : Promise.resolve(null)).then(function (rose) {
+        rememberCut(orig, newSeq, payload, state.result.stats, true);
+        renderRecut();
+        status("Done: \u201C" + newSeq.name + "\u201D has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched" + shownNote(r) + roseNote(rose) + "). Your original is untouched.", "ok", 1);
+      });
     });
   });
 
@@ -1324,9 +1413,12 @@
     status("Opening \u201C" + rec.name + "\u201D\u2026", "", 0.02);
     return callHost("openSequenceById", [rec.id]).then(function (r) {
       return writeCut(rec.id, payload, "Recutting").then(function (res) {
-        rememberCut(orig, { sequenceID: rec.id, name: r.name }, payload, state.result.stats, false);
-        renderRecut();
-        status("Recut \u201C" + r.name + "\u201D: " + state.result.stats.cuts + " cuts (" + res.toggled + " clips switched" + shownNote(res) + "). Undo recut puts the previous version back.", "ok", 1);
+        var c2 = camera2Shots();
+        return (c2 ? labelCamera2(rec.id, c2.track, c2.ranges) : Promise.resolve(null)).then(function (rose) {
+          rememberCut(orig, { sequenceID: rec.id, name: r.name }, payload, state.result.stats, false);
+          renderRecut();
+          status("Recut \u201C" + r.name + "\u201D: " + state.result.stats.cuts + " cuts (" + res.toggled + " clips switched" + shownNote(res) + roseNote(rose) + "). Undo recut puts the previous version back.", "ok", 1);
+        });
       });
     });
   });
@@ -1949,10 +2041,15 @@
       return callHostWithin(10000, "countClips", [JSON.stringify({ track: info.track, startSec: startSec, endSec: endSec })]).then(function (c) {
         // Inside the range each angle change starts a piece (the first one sits on the range start), so one piece each.
         var want = cuts.length, okAll = c.clips >= want;
-        say("Built “" + info.name + "” as multicam: " + res.done + " angle changes in " + Math.round(res.ms / 1000) + " s. " +
-          (okAll ? "The multicam track has " + c.clips + " pieces in the cut range, as expected."
-            : "Only " + c.clips + " of " + want + " cuts show on the track: raise Pause (Settings) and Resume, or undo and run again."));
-        status(okAll ? "Multicam build finished." : "Multicam build finished, but some cuts didn't land.", okAll ? "ok" : "err", 1);
+        // Camera 2 stretches of what was typed, to label Rose.
+        var ranges = [];
+        cuts.forEach(function (cut, i) { if (cut.camera === 2) ranges.push([cut.sec, i + 1 < cuts.length ? cuts[i + 1].sec : endSec]); });
+        return labelCamera2(info.sequenceID, info.track, ranges).then(function (rose) {
+          say("Built “" + info.name + "” as multicam: " + res.done + " angle changes in " + Math.round(res.ms / 1000) + " s" + roseNote(rose) + ". " +
+            (okAll ? "The multicam track has " + c.clips + " pieces in the cut range, as expected."
+              : "Only " + c.clips + " of " + want + " cuts show on the track: raise Pause (Settings) and Resume, or undo and run again."));
+          status(okAll ? "Multicam build finished." : "Multicam build finished, but some cuts didn't land.", okAll ? "ok" : "err", 1);
+        });
       });
     }, function (e) {
       renderMcRow();
@@ -2112,6 +2209,8 @@
   $("btnResumeMc").onclick = function () { buildMulticam(true); };
   $("mcInOut").checked = !!load("mcInOut", false);
   $("mcInOut").onchange = function () { store("mcInOut", this.checked); };
+  $("rose2").checked = load("rose2", true) !== false;
+  $("rose2").onchange = function () { store("rose2", this.checked); };
   renderKbdKeys();
   $("btnIntroMarkers").onclick = markNames;
   $("btnIntroClear").onclick = clearNames;

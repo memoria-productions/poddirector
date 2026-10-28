@@ -66,6 +66,11 @@
 - **In/Out followed live:** waveforms and camera movement are analyzed for the whole sequence once; moving the In/Out marks in Premiere re-plans the preview and cut straight away.
 - **Build as multicam skips uncovered stretches** (no multicam footage at the ends or in a gap) instead of refusing.
 
+## v0.11 (added)
+
+- **Reads inside multicam nests:** a nested/multicam sequence's angles become camera tracks mapped onto the timeline, so movement and framing analysis still see the dolly; one click moves a saved setup onto the angles.
+- **Camera 2 shots labelled Rose** after any build (option, on by default).
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

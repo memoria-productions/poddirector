@@ -240,6 +240,44 @@ test("multicamCovering finds the multicam track for a range; countClips counts t
   assert.equal(call("PD.countClips(" + q({ track: 0, startSec: 5, endSec: 25 }) + ")").clips, 3);
 });
 
+test("a multicam nest's angles are read through and mapped onto the outer timeline", () => {
+  const fake = fakePremiere(40, 1);
+  const tick = (s) => ({ ticks: String(Math.round(s * TPS)) });
+  const clipsOf = (list) => Object.assign(list.slice(), { numItems: list.length });
+  // Inside the nest: V1 wide, V2 dolly, both 0-60 s of their own files.
+  const innerTrack = (name, media) => {
+    const c = [{ name: media, start: tick(0), end: tick(60), inPoint: tick(0), projectItem: { getMediaPath: () => "C:/media/" + media } }];
+    return { name, get clips() { return clipsOf(c); } };
+  };
+  const nest = { sequenceID: "nest-1", name: "Cams MC", projectItem: { nodeId: "n1" },
+    videoTracks: Object.assign([innerTrack("Wide", "wide.mp4"), innerTrack("Dolly", "dolly.mp4")], { numTracks: 2 }) };
+  fake.ctx.app.project.sequences.push(nest);
+  // Outside: V1 plays the nest from 2 s of its time at 5 s, cut in two at 15 s (as after a multicam build).
+  const nestItem = { nodeId: "n1", isSequence: () => true, isMulticamClip: () => true, getMediaPath: () => "" };
+  fake.video[0]._clips = [
+    { name: "Cams MC", start: tick(5), end: tick(15), inPoint: tick(2), projectItem: nestItem, setColorLabel(i) { this.label = i; } },
+    { name: "Cams MC", start: tick(15), end: tick(35), inPoint: tick(12), projectItem: nestItem, setColorLabel(i) { this.label = i; } }
+  ];
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const call = (expr) => JSON.parse(vm.runInContext(expr, fake.ctx));
+  const v1 = call("PD.getSequenceInfo()").videoTracks[0];
+  assert.ok(v1.nest, "nest found");
+  assert.equal(v1.nest.multicam, true);
+  assert.deepEqual(v1.nest.angles.map((a) => [a.angle, a.name]), [[1, "Wide"], [2, "Dolly"]]);
+  // The two outer pieces carry on continuously, so each angle is one clip: 5-35 s on the outside, from 2 s of the file.
+  assert.deepEqual(v1.nest.angles[1].clips, [{ startSec: 5, endSec: 35, inPointSec: 2, mediaPath: "C:/media/dolly.mp4", speed: 1 }]);
+
+  // Rose on the pieces whose middle is in a camera 2 stretch.
+  const q = (o) => JSON.stringify(JSON.stringify(o));
+  const r = call("PD.colorClips(" + q({ sequenceID: "seq-1", track: 0, ranges: [[15, 35]], color: 6 }) + ")");
+  assert.deepEqual([r.colored, r.unsupported], [1, false]);
+  assert.equal(fake.video[0]._clips[1].label, 6);
+  assert.equal(fake.video[0]._clips[0].label, undefined);
+  delete fake.video[0]._clips[0].setColorLabel;
+  assert.equal(call("PD.colorClips(" + q({ track: 0, ranges: [[0, 15]], color: 6 }) + ")").unsupported, true, "says so when Premiere can't");
+});
+
 test("layered payload: with three cameras the middle one isn't cut while the top one covers it", () => {
   const cams = [{ id: "w", videoTrack: 0 }, { id: "a", videoTrack: 1 }, { id: "b", videoTrack: 2 }];
   const shot = (a, b, c) => ({ startSec: a, endSec: b, cameraId: c });

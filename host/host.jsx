@@ -96,9 +96,74 @@ var PD = (function () {
       }
       var hidden = false;
       try { hidden = track.isMuted(); } catch (e6) { hidden = false; } // a video track's "mute" is its eye (track output)
-      info.videoTracks.push({ index: i, name: track.name || ("V" + (i + 1)), clipCount: n, firstClip: first, endSec: endMax, mediaPaths: media, clips: vclips, hidden: hidden });
+      info.videoTracks.push({ index: i, name: track.name || ("V" + (i + 1)), clipCount: n, firstClip: first, endSec: endMax, mediaPaths: media, clips: vclips, hidden: hidden,
+        nest: readNest(track) });
     }
     return ok(info);
+  }
+
+  /** The sequence a nested (or multicam) clip plays, or null. */
+  function nestedSequenceOf(clip) {
+    var pi = clip.projectItem, isSeq = false;
+    try { isSeq = !!(pi && pi.isSequence && pi.isSequence()); } catch (e) { isSeq = false; }
+    if (!isSeq) return null;
+    for (var s = 0; s < app.project.sequences.numSequences; s++) {
+      var q = app.project.sequences[s];
+      try { if (q.projectItem && q.projectItem.nodeId === pi.nodeId) return q; } catch (e2) { /* keep looking */ }
+    }
+    return null;
+  }
+
+  /**
+   * A video track holding a nested (multicam) sequence: the cameras inside it, mapped onto this sequence's
+   * timeline, so they can be analyzed as if they were stacked here. Each video track of the nest is an angle
+   * (V1 = angle 1). Uses the nest that covers most of the track; null when there isn't one.
+   * -> { sequenceID, name, multicam, angles: [{ angle, name, clips: [{ startSec, endSec, inPointSec, mediaPath, speed }] }] }
+   */
+  function readNest(track) {
+    var groups = {}, best = null;
+    for (var j = 0; j < track.clips.numItems; j++) {
+      var clip = track.clips[j], inner = nestedSequenceOf(clip);
+      if (!inner) continue;
+      var g = groups[inner.sequenceID];
+      if (!g) {
+        var mc = false;
+        try { mc = !!(clip.projectItem.isMulticamClip && clip.projectItem.isMulticamClip()); } catch (e) { mc = false; }
+        g = groups[inner.sequenceID] = { seq: inner, multicam: mc, windows: [], covered: 0 };
+      }
+      // Outer [start, end) plays the nest from inPoint on.
+      g.windows.push({ s: sec(clip.start), e: sec(clip.end), inner: sec(clip.inPoint) });
+      g.covered += sec(clip.end) - sec(clip.start);
+    }
+    for (var id in groups) if (groups.hasOwnProperty(id) && (!best || groups[id].covered > best.covered)) best = groups[id];
+    if (!best) return null;
+    var angles = [];
+    for (var v = 0; v < best.seq.videoTracks.numTracks; v++) {
+      var vt = best.seq.videoTracks[v], mapped = [];
+      for (var c = 0; c < vt.clips.numItems; c++) {
+        var ic = vt.clips[c], icS = sec(ic.start), icE = sec(ic.end), mp = null, speed = 1;
+        try { mp = ic.projectItem ? ic.projectItem.getMediaPath() : null; } catch (e3) { mp = null; }
+        if (!mp) continue;
+        try { if (typeof ic.getSpeed === "function") speed = ic.getSpeed(); } catch (e4) { speed = 1; }
+        for (var w = 0; w < best.windows.length; w++) {
+          var win = best.windows[w], a = Math.max(icS, win.inner), b = Math.min(icE, win.inner + (win.e - win.s));
+          if (b <= a) continue;
+          mapped.push({ startSec: win.s + (a - win.inner), endSec: win.s + (b - win.inner), inPointSec: sec(ic.inPoint) + (a - icS) * speed, mediaPath: mp, speed: speed });
+        }
+      }
+      if (!mapped.length) continue;
+      mapped.sort(function (x, y) { return x.startSec - y.startSec; });
+      // Pieces split by cuts on the outer track are one continuous clip again for analysis.
+      var merged = [mapped[0]];
+      for (var k = 1; k < mapped.length; k++) {
+        var p = merged[merged.length - 1], m = mapped[k];
+        if (m.mediaPath === p.mediaPath && Math.abs(m.startSec - p.endSec) < 0.02 &&
+            Math.abs(m.inPointSec - (p.inPointSec + (p.endSec - p.startSec) * p.speed)) < 0.05) p.endSec = m.endSec;
+        else merged.push(m);
+      }
+      angles.push({ angle: v + 1, name: vt.name || ("V" + (v + 1)), clips: merged.slice(0, 2000) });
+    }
+    return angles.length ? { sequenceID: best.seq.sequenceID, name: best.seq.name, multicam: best.multicam, angles: angles } : null;
   }
 
   /** The sequence's In/Out marks in seconds; null when a mark isn't set (Premiere reads unset marks as 0 / the end). */
@@ -366,6 +431,30 @@ var PD = (function () {
     return ok(r);
   }
 
+  /**
+   * json: { sequenceID, track, ranges: [[startSec, endSec]], color } — set the label colour (Premiere's label index,
+   * e.g. 6 = Rose) of the clips on a video track whose middle falls in one of the ranges. Only the timeline clips
+   * change, never the source in the project (every piece of a multicam nest shares one).
+   * -> { colored, unsupported }
+   */
+  function colorClips(json) {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var p = JSON.parse(json);
+    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the built sequence is not the active sequence.");
+    var vt = seq.videoTracks[p.track], n = 0;
+    if (!vt) return fail("Video track V" + (p.track + 1) + " not found.");
+    var r = p.ranges.slice().sort(function (a, b) { return a[0] - b[0]; });
+    for (var c = 0; c < vt.clips.numItems; c++) {
+      var clip = vt.clips[c], mid = (sec(clip.start) + sec(clip.end)) / 2, hit = false;
+      for (var k = 0; k < r.length && r[k][0] <= mid; k++) if (mid < r[k][1]) { hit = true; break; }
+      if (!hit) continue;
+      if (typeof clip.setColorLabel !== "function") return ok({ colored: n, unsupported: true });
+      try { clip.setColorLabel(p.color); n++; } catch (e) { return ok({ colored: n, unsupported: true, error: String(e) }); }
+    }
+    return ok({ colored: n, unsupported: false });
+  }
+
   /** json: { track, startSec, endSec } -> { clips }: how many pieces a track has inside a range (after cutting). */
   function countClips(json) {
     var seq = seqOrFail();
@@ -409,5 +498,5 @@ var PD = (function () {
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
            razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, multicamAtPlayhead: multicamAtPlayhead,
-           multicamCovering: multicamCovering, countClips: countClips, openSequenceById: openSequenceById, setInOut: setInOut };
+           multicamCovering: multicamCovering, countClips: countClips, colorClips: colorClips, openSequenceById: openSequenceById, setInOut: setInOut };
 })();
