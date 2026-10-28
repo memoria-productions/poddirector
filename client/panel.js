@@ -1804,11 +1804,12 @@
         if (kbdStop) throw new Error("Stopped after " + done + " of " + total + ".");
         if (done >= total) return null;
         var c = opts.cuts[done], key = opts.keys.map[c.camera], left = (total - done) * (2 * pause + 120) / 1000;
+        if (!key || !key.usable) throw new Error("No typeable Cut to Camera " + c.camera + " shortcut; stopped after " + done + " of " + total + ".");
         kbdBanner("running", opts.label + " — hands off", (done + 1) + " of " + total + ": camera " + c.camera + " at " + fmt(c.sec) +
           " · about " + (left > 90 ? Math.ceil(left / 60) + " min" : Math.ceil(left) + " s") + " left. Switching windows stops it.");
         opts.say(opts.label + ": " + (done + 1) + " of " + total);
         return callHostWithin(10000, "setPlayhead", [c.sec]).then(function () { return wait(pause); }).then(function () {
-          return sender.send(key);
+          return sender.send(key.usable); // the typeable shortcut ({ key, ctrl, alt, shift }), not the whole entry
         }).then(function (reply) {
           opts.step((done + 1) + ": " + key.label + " at " + fmt(c.sec) + " → " + reply);
           if (reply !== "OK") {
@@ -1936,7 +1937,9 @@
       // A partial build first gets edit points at In and Out, so the angle changes can't run on past Out
       // (Cut to Camera switches up to the next edit point) and whatever follows stays exactly as it was.
       var edges = onlyInOut && !from ? callHostWithin(15000, "razorTrack", [JSON.stringify({ sequenceID: r.sequenceID, track: r.track,
-        frames: [Math.round(startSec * r.fps), Math.round(endSec * r.fps)] })]).then(function (z) { step("edit points at In/Out: " + z.razored + " added"); }) : Promise.resolve();
+        frames: [Math.round(startSec * r.fps), Math.round(endSec * r.fps)] })]).then(function (z) {
+          step("edit points at In/Out: " + z.razored + " added" + (z.razored < 2 ? " (" + (2 - z.razored) + " already on a clip edge)" : ""));
+        }) : Promise.resolve();
       return edges.then(function () {
         return typeCuts({ cuts: cuts, keys: keys, from: from, label: "Building multicam", say: say, step: step,
           onCut: function (n) { var a = mcRuns(); if (a[r.sequenceID]) { a[r.sequenceID].done = n; store("mcRuns", a); } } });
