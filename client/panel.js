@@ -1745,87 +1745,180 @@
     })]);
   }
 
-  /**
-   * Trial: from the playhead, every few seconds, cut to camera 2, 1, 2, … on the multicam clip under the
-   * playhead by pressing the user's Cut to Camera shortcuts. Stops if Premiere isn't the window in front.
-   */
-  var runKbdTrial = guard(function () {
-    if (!inPremiere || !hasNode || !K) throw new Error("The keystroke trial needs the panel running inside Premiere on Windows.");
+  // The pinned bar at the top: mode "click" (countdown), "running" (typing), or null to hide it.
+  function kbdBanner(mode, big, small) {
+    var b = $("kbdBanner");
+    b.classList.toggle("hidden", !mode);
+    b.classList.toggle("click", mode === "click");
+    b.classList.toggle("running", mode === "running");
+    $("kbdBannerBig").innerHTML = big || "";
+    $("kbdBannerSmall").textContent = small || "";
+  }
+  function kbdPause() { return Math.max(50, Math.min(2000, +$("kbdPause").value || 250)); }
+
+  /** Cut to Camera keys for these angles, or an error naming the ones that can't be typed. */
+  function keysFor(angles) {
     var k = cutKeys();
     if (!k || !k.file) throw new Error("Couldn't find your Premiere keyboard shortcuts file, so PodDirector doesn't know your Cut to Camera keys.");
-    renderKbdKeys();
-    if (!k.cams.length || !k.cams[0].usable || !k.cams[1].usable) {
-      throw new Error("Cut to Camera 1 and 2 need a letter, digit or symbol shortcut (Edit > Keyboard Shortcuts). Found: " +
-        k.cams.slice(0, 2).map(function (c) { return "camera " + c.camera + " = " + (c.label || "none"); }).join(", ") + ".");
-    }
-    var count = Math.max(2, Math.min(40, +$("kbdCount").value || 6)), every = Math.max(0.5, +$("kbdEvery").value || 2);
-    var pause = Math.max(50, Math.min(2000, +$("kbdPause").value || 250));
-    var sender = null, info = null, sent = [];
+    var map = {}, bad = [];
+    angles.forEach(function (a) {
+      var c = k.cams[a - 1];
+      if (c && c.usable) map[a] = c; else bad.push("camera " + a + " = " + (c && c.label ? c.label : "none"));
+    });
+    if (bad.length) throw new Error("Cut to Camera needs a letter, digit or symbol shortcut (Edit > Keyboard Shortcuts) for: " + bad.join(", ") + ".");
+    return { file: k.file, map: map };
+  }
+
+  /**
+   * Type a list of angle changes into Premiere: countdown (click in the Timeline), then for each { sec, camera }
+   * park the playhead and press Cut to Camera. Stops on Stop, or as soon as Premiere isn't the window in front.
+   * opts: { cuts, keys, from (index to start at), label, say, step, onCut(index) } -> { done, ms }
+   */
+  function typeCuts(opts) {
+    var sender = null, done = opts.from || 0, pause = kbdPause(), total = opts.cuts.length;
     kbdStop = false;
-    function say(t) { $("kbdStatus").textContent = t; status(t, ""); }
-    function step(t) { log("Keystroke trial: " + t); }
-    // The pinned bar at the top: mode "click" (countdown), "running" (typing), or null to hide it.
-    function banner(mode, big, small) {
-      var b = $("kbdBanner");
-      b.classList.toggle("hidden", !mode);
-      b.classList.toggle("click", mode === "click");
-      b.classList.toggle("running", mode === "running");
-      $("kbdBannerBig").innerHTML = big || "";
-      $("kbdBannerSmall").textContent = small || "";
-    }
-    step("keys " + k.cams[0].label + " / " + k.cams[1].label + " from " + k.file.path);
-    step("looking for a multicam clip under the playhead");
-    return callHostWithin(10000, "multicamAtPlayhead").then(function (r) {
-      info = r;
-      if (!r.multicam) throw new Error("There's no multicam or nested clip under the playhead in “" + r.name + "”. Park the playhead on one and try again.");
-      step("found “" + r.multicam.name + "” on V" + (r.multicam.track + 1) + " (" + (r.multicam.multicam ? "multicam" : "nested sequence; make sure Multi-Camera is enabled on it") + ")");
-      if (!r.multicam.multicam) say("“" + r.multicam.name + "” is a nested sequence: right-click it > Multi-Camera > Enable if you haven't.");
-      step("starting the keystroke helper");
-      return K.startSender();
-    }).then(function (s) {
+    opts.step("starting the keystroke helper");
+    return K.startSender().then(function (s) {
       sender = s;
-      step("helper ready; counting down");
+      opts.step("helper ready; counting down");
       var n = 5;
       function tick() {
-        if (kbdStop) throw new Error("Stopped.");
+        if (kbdStop) throw new Error("Stopped before anything was sent.");
         if (n === 0) return null;
-        banner("click", "Click once in the Timeline now <b>" + n + "</b>", "PodDirector types into whatever has focus. Then hands off until it's done.");
-        say("Click once in the Timeline now… starting in " + n--);
+        kbdBanner("click", "Click once in the Timeline now <b>" + n + "</b>", "PodDirector types into whatever has focus. Then hands off until it's done.");
+        opts.say("Click once in the Timeline now… starting in " + n--);
         return wait(1000).then(tick);
       }
       return tick();
     }).then(function () {
       return sender.front();
     }).then(function (title) {
-      step("window in front: “" + title.slice(0, 60) + "”");
+      opts.step("window in front: “" + title.slice(0, 60) + "”");
       if (title.indexOf("Adobe Premiere Pro") < 0) throw new Error("Premiere wasn't the window in front (“" + title.slice(0, 40) + "”), so nothing was sent.");
-      var i = 0, t0 = Date.now();
+      var t0 = Date.now();
       function next() {
-        if (kbdStop) throw new Error("Stopped after " + sent.length + " cuts.");
-        if (i >= count) return null;
-        var at = info.playheadSec + (i + 1) * every;
-        if (at >= info.multicam.endSec - 0.1) return null; // past the end of the multicam clip
-        var cam = i % 2 === 0 ? k.cams[1] : k.cams[0];
-        i++;
-        banner("running", "Cutting — hands off", "Cut " + i + " of " + count + ": camera " + cam.camera + " at " + fmt(at) + ". Switching windows stops it.");
-        say("Cut " + i + " of " + count + ": camera " + cam.camera + " at " + fmt(at));
-        return callHostWithin(10000, "setPlayhead", [at]).then(function () { return wait(pause); }).then(function () {
-          return sender.send(cam.usable);
+        if (kbdStop) throw new Error("Stopped after " + done + " of " + total + ".");
+        if (done >= total) return null;
+        var c = opts.cuts[done], key = opts.keys.map[c.camera], left = (total - done) * (2 * pause + 120) / 1000;
+        kbdBanner("running", opts.label + " — hands off", (done + 1) + " of " + total + ": camera " + c.camera + " at " + fmt(c.sec) +
+          " · about " + (left > 90 ? Math.ceil(left / 60) + " min" : Math.ceil(left) + " s") + " left. Switching windows stops it.");
+        opts.say(opts.label + ": " + (done + 1) + " of " + total);
+        return callHostWithin(10000, "setPlayhead", [c.sec]).then(function () { return wait(pause); }).then(function () {
+          return sender.send(key);
         }).then(function (reply) {
-          step("cut " + i + ": " + cam.label + " at " + fmt(at) + " → " + reply);
-          if (reply !== "OK") throw new Error(reply.indexOf("NOFOCUS") === 0 ? "Premiere stopped being the window in front; stopped after " + sent.length + " cuts." : "Couldn't type " + cam.label + " (" + reply + ").");
-          sent.push({ sec: at, camera: cam.camera });
+          opts.step((done + 1) + ": " + key.label + " at " + fmt(c.sec) + " → " + reply);
+          if (reply !== "OK") {
+            throw new Error(reply.indexOf("NOFOCUS") === 0 ? "Premiere stopped being the window in front; stopped after " + done + " of " + total + "."
+              : "Couldn't type " + key.label + " (" + reply + ").");
+          }
+          done++;
+          if (opts.onCut) opts.onCut(done);
           return wait(pause);
         }).then(next);
       }
-      return next().then(function () {
-        log("Keystroke trial on " + info.name + " (" + info.multicam.name + "): " + sent.map(function (s) { return fmt(s.sec) + " cam " + s.camera; }).join(", "));
-        return callHostWithin(10000, "setPlayhead", [info.playheadSec]);
-      }).then(function () {
-        say("Sent " + sent.length + " cuts in " + ((Date.now() - t0) / 1000).toFixed(1) + " s, from " + fmt(info.playheadSec) +
+      return next().then(function () { return { done: done, ms: Date.now() - t0 }; });
+    }).then(function (r) { kbdBanner(null); sender.close(); return r; },
+      function (e) { kbdBanner(null); if (sender) sender.close(); e.done = done; throw e; });
+  }
+
+  /**
+   * Trial: from the playhead, every few seconds, cut to camera 2, 1, 2, … on the multicam clip under the
+   * playhead by pressing the user's Cut to Camera shortcuts.
+   */
+  var runKbdTrial = guard(function () {
+    if (!inPremiere || !hasNode || !K) throw new Error("The keystroke trial needs the panel running inside Premiere on Windows.");
+    renderKbdKeys();
+    var keys = keysFor([1, 2]);
+    var count = Math.max(2, Math.min(40, +$("kbdCount").value || 6)), every = Math.max(0.5, +$("kbdEvery").value || 2);
+    function say(t) { $("kbdStatus").textContent = t; status(t, ""); }
+    function step(t) { log("Keystroke trial: " + t); }
+    var info = null, cuts = [];
+    step("keys " + keys.map[1].label + " / " + keys.map[2].label + " from " + keys.file.path);
+    step("looking for a multicam clip under the playhead");
+    return callHostWithin(10000, "multicamAtPlayhead").then(function (r) {
+      info = r;
+      if (!r.multicam) throw new Error("There's no multicam or nested clip under the playhead in “" + r.name + "”. Park the playhead on one and try again.");
+      step("found “" + r.multicam.name + "” on V" + (r.multicam.track + 1) + " (" + (r.multicam.multicam ? "multicam" : "nested sequence; make sure Multi-Camera is enabled on it") + ")");
+      for (var i = 0; i < count; i++) {
+        var at = r.playheadSec + (i + 1) * every;
+        if (at >= r.multicam.endSec - 0.1) break; // past the end of the multicam clip
+        cuts.push({ sec: at, camera: i % 2 === 0 ? 2 : 1 });
+      }
+      return typeCuts({ cuts: cuts, keys: keys, label: "Trial", say: say, step: step });
+    }).then(function (res) {
+      log("Keystroke trial on " + info.name + " (" + info.multicam.name + "): " + cuts.map(function (s) { return fmt(s.sec) + " cam " + s.camera; }).join(", "));
+      return callHostWithin(10000, "setPlayhead", [info.playheadSec]).then(function () {
+        say("Sent " + res.done + " cuts in " + (res.ms / 1000).toFixed(1) + " s, from " + fmt(info.playheadSec) +
           ". Check the timeline: there should be a cut every " + every + " s, alternating camera 2 and 1. The times are in the Log.");
       });
-    }).then(function () { banner(null); if (sender) sender.close(); }, function (e) { banner(null); if (sender) sender.close(); $("kbdStatus").textContent = e.message; throw e; });
+    }, function (e) { $("kbdStatus").textContent = e.message; throw e; });
+  });
+
+  // ----------------------------------------------------- build as multicam
+  /** Progress of the last multicam build per sequence, so a stopped build can carry on where it left off. */
+  function mcRuns() { return load("mcRuns", {}); }
+
+  function renderMcRow() {
+    var btn = $("btnBuildMc"), resume = $("btnResumeMc");
+    if (!btn) return;
+    var run = state.mcSeqId ? mcRuns()[state.mcSeqId] : null;
+    var left = run && run.done < run.cuts.length ? run.cuts.length - run.done : 0;
+    resume.classList.toggle("hidden", !left);
+    resume.textContent = left ? "Resume (" + left + " left)" : "Resume";
+  }
+
+  /**
+   * Apply the planned cut to a multicam (or Multi-Camera enabled nested) clip in the active sequence by pressing
+   * Cut to Camera at every angle change. resume: carry on from where the last build of this sequence stopped.
+   */
+  var buildMulticam = guard(function (resume) {
+    if (!inPremiere || !hasNode || !K) throw new Error("Build as multicam needs the panel running inside Premiere on Windows.");
+    if (!state.result) throw new Error("Analyze first: the build follows the planned cut.");
+    var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
+    var cuts = D.toMulticamCuts(state.result, cams);
+    if (!cuts.length) throw new Error("The planned cut is empty.");
+    var angles = []; cuts.forEach(function (c) { if (angles.indexOf(c.camera) < 0) angles.push(c.camera); });
+    var keys = keysFor(angles.sort());
+    var shots = state.result.shots, startSec = cuts[0].sec, endSec = shots[shots.length - 1].endSec;
+    function say(t) { $("mcNote").textContent = t; status(t, ""); }
+    function step(t) { log("Build as multicam: " + t); }
+    var info = null, from = 0;
+    step("angles: " + cams.map(function (c) { return c.name + " = camera " + (c.angle || c.videoTrack + 1); }).join(", ") +
+      "; keys from " + keys.file.path);
+    return callHostWithin(10000, "multicamCovering", [JSON.stringify({ startSec: startSec, endSec: endSec })]).then(function (r) {
+      info = r;
+      if (r.track === undefined) {
+        throw new Error("“" + r.name + "” has no multicam clip. In a duplicate of this sequence, select the camera clips (V1, V2), Nest them, " +
+          "right-click the nest > Multi-Camera > Enable, open that sequence and try again.");
+      }
+      if (r.gaps.length) {
+        throw new Error("The multicam clip on V" + (r.track + 1) + " doesn't cover the whole cut: nothing multicam at " +
+          r.gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ") + ".");
+      }
+      state.mcSeqId = r.sequenceID;
+      var prev = mcRuns()[r.sequenceID];
+      if (resume && prev && prev.done < prev.cuts.length && prev.cuts.length === cuts.length) from = prev.done;
+      step("found " + (r.multicam ? "multicam" : "nested") + " clip(s) on V" + (r.track + 1) + " in “" + r.name + "”; " +
+        cuts.length + " angle changes" + (from ? ", resuming at " + (from + 1) : ""));
+      var all = mcRuns(); all[r.sequenceID] = { cuts: cuts, done: from, track: r.track, startSec: startSec, endSec: endSec, at: new Date().toISOString() };
+      store("mcRuns", all);
+      return typeCuts({ cuts: cuts, keys: keys, from: from, label: "Building multicam", say: say, step: step,
+        onCut: function (n) { var a = mcRuns(); if (a[r.sequenceID]) { a[r.sequenceID].done = n; store("mcRuns", a); } } });
+    }).then(function (res) {
+      renderMcRow();
+      return callHostWithin(10000, "countClips", [JSON.stringify({ track: info.track, startSec: startSec, endSec: endSec })]).then(function (c) {
+        // Inside the range each angle change starts a piece (the first one sits on the range start), so one piece each.
+        var want = cuts.length, okAll = c.clips >= want;
+        say("Built “" + info.name + "” as multicam: " + res.done + " angle changes in " + Math.round(res.ms / 1000) + " s. " +
+          (okAll ? "The multicam track has " + c.clips + " pieces in the cut range, as expected."
+            : "Only " + c.clips + " of " + want + " cuts show on the track: raise Pause (Settings) and Resume, or undo and run again."));
+        status(okAll ? "Multicam build finished." : "Multicam build finished, but some cuts didn't land.", okAll ? "ok" : "err", 1);
+      });
+    }, function (e) {
+      renderMcRow();
+      if (e.done !== undefined) $("mcNote").textContent = e.message + (e.done < cuts.length ? " Click Resume to carry on from there." : "");
+      throw e;
+    });
   });
 
   /**
@@ -1849,6 +1942,8 @@
     $("btnApply").disabled = b || !has || !inPremiere;
     $("btnClearMarkers").disabled = b || !inPremiere;
     $("btnExportPlan").disabled = b || !has || !hasNode;
+    $("btnBuildMc").disabled = b || !has || !inPremiere;
+    $("btnResumeMc").disabled = b || !has || !inPremiere;
     if (typeof renderRecut === "function") renderRecut();
     var sel = state.tx.suggestions.some(function (s) { return !state.tx.off[s.id]; });
     $("btnTranscribe").disabled = b || !state.seq;
@@ -1952,6 +2047,9 @@
   $("btnReload").onclick = reloadPanel;
   $("btnKbdTrial").onclick = runKbdTrial;
   $("btnKbdStop").onclick = function () { kbdStop = true; };
+  $("btnKbdBannerStop").onclick = function () { kbdStop = true; $("kbdBannerSmall").textContent = "Stopping after this cut…"; };
+  $("btnBuildMc").onclick = function () { buildMulticam(false); };
+  $("btnResumeMc").onclick = function () { buildMulticam(true); };
   renderKbdKeys();
   $("btnIntroMarkers").onclick = markNames;
   $("btnIntroClear").onclick = clearNames;

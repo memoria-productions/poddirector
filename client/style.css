@@ -166,6 +166,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .kbd-banner .kbd-big b { font-size: 30px; display: inline-block; min-width: 1.2em; }
 .kbd-banner .kbd-small { font-size: 12px; margin-top: 2px; }
 .kbd-banner.click { animation: kbd-pulse 1s ease-in-out infinite; }
+.kbd-banner .kbd-stop { margin-top: 6px; background: #1d1d1d; color: #fff; border-color: #1d1d1d; }
 .kbd-banner.running { background: var(--ok); }
 @keyframes kbd-pulse { 50% { box-shadow: 0 0 0 4px rgba(230, 180, 80, .45); } }
 

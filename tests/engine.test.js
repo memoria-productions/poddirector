@@ -194,6 +194,18 @@ test("mic confidence: a stretch where someone leans away is flagged", () => {
   assert.ok(ar.weak.length && ar.weak[0][0] >= 55, JSON.stringify(ar.weak));
 });
 
+test("multicam cut list: one angle change per shot, angle = video track + 1", () => {
+  const cams = [{ id: "w", videoTrack: 0 }, { id: "solo", videoTrack: 1 }, { id: "x", videoTrack: 3, angle: 2 }];
+  const shot = (a, b, c) => ({ startSec: a, endSec: b, cameraId: c });
+  const cuts = D.toMulticamCuts({ shots: [shot(10, 15, "w"), shot(15, 22, "solo"), shot(22, 30, "x"), shot(30, 40, "w")] }, cams);
+  assert.deepEqual(cuts.map((c) => [c.sec, c.camera]), [[10, 1], [15, 2], [30, 1]], "x shares angle 2 with solo, so no cut at 22");
+  assert.equal(cuts[0].first, true);
+  const r = D.planRange(conversation(), { speakers, cameras: cameras.map((c, i) => Object.assign({}, c)) }, 5, 40);
+  const list = D.toMulticamCuts(r, cameras);
+  assert.equal(list[0].sec, 5, "starts at the In mark");
+  list.slice(1).forEach((c, i) => assert.notEqual(c.camera, list[i].camera));
+});
+
 test("manual locks override the automatic choice", () => {
   const r = D.plan(conversation(), { speakers, cameras, overrides: [{ startSec: 15, endSec: 20, cameraId: "cW" }] });
   assert.equal(at(r, 17).cameraId, "cW");

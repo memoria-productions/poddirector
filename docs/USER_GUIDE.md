@@ -226,6 +226,18 @@ Premiere has no script command to switch a multicam angle, but its **Cut to Came
 
 **Pause** is the wait before and after each keypress; raise it if cuts are missed.
 
+#### Build as multicam (experimental)
+
+Once the trial works, **Build as multicam** applies the whole planned cut to a real multicam clip. You get a multicam sequence you can re-switch by hand afterwards.
+
+1. **Analyze** the episode as usual, on the sequence with the cameras stacked on V1 and V2.
+2. **Duplicate** that sequence in Premiere. In the duplicate, select the camera clips on V1 and V2, **Nest** them, then right-click the nest → **Multi-Camera → Enable**. Nesting keeps every clip at the same time, so the planned shot times still line up.
+3. Open the duplicate, and on the Multicam tab click **Build as multicam**. Each camera's angle is its original track: the wide on V1 is camera 1, the dolly on V2 is camera 2.
+4. Click once in the Timeline during the yellow countdown, then leave the computer alone. For every angle change, PodDirector parks the playhead and presses your Cut to Camera key. The green bar shows progress and the time left: about 0.6 s per cut at the default Pause, so a few minutes for an episode. **Stop** in the bar, or switching to another window, stops it.
+5. Afterwards it counts the pieces on the multicam track and tells you whether every cut landed. If it stopped part-way, or some cuts were missed, **Resume** carries on from where it stopped. Raise **Pause** under Settings first if cuts were being missed.
+
+Each keypress is one undo step in Premiere. Run it on the duplicate, so your stacked-track sequence stays as it was.
+
 ---
 
 ## 6. Updating

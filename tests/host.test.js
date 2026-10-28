@@ -216,6 +216,26 @@ test("multicamAtPlayhead finds a multicam clip under the playhead (and says when
   assert.deepEqual(r.multicam, { track: 1, name: "cam1.mp4", startSec: 0, endSec: 30, multicam: true });
 });
 
+test("multicamCovering finds the multicam track for a range; countClips counts the pieces", () => {
+  const fake = fakePremiere(30, 2);
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const call = (expr) => JSON.parse(vm.runInContext(expr, fake.ctx));
+  const q = (o) => JSON.stringify(JSON.stringify(o));
+  assert.equal(call("PD.multicamCovering(" + q({ startSec: 5, endSec: 25 }) + ")").track, undefined, "nothing nested yet");
+  fake.video[0]._clips[0].projectItem.isSequence = () => true;
+  fake.video[0]._clips[0].projectItem.isMulticamClip = () => true;
+  const r = call("PD.multicamCovering(" + q({ startSec: 5, endSec: 25 }) + ")");
+  assert.equal(r.track, 0);
+  assert.equal(r.multicam, true);
+  assert.deepEqual(r.gaps, []);
+  assert.equal(Math.round(r.coveredSec), 20);
+  // Two cuts with the razor, then count: three pieces inside the range.
+  const qt = fake.ctx.qe.project.getActiveSequence().getVideoTrackAt(0);
+  qt.razor("00:00:10:00"); qt.razor("00:00:20:00");
+  assert.equal(call("PD.countClips(" + q({ track: 0, startSec: 5, endSec: 25 }) + ")").clips, 3);
+});
+
 test("layered payload: with three cameras the middle one isn't cut while the top one covers it", () => {
   const cams = [{ id: "w", videoTrack: 0 }, { id: "a", videoTrack: 1 }, { id: "b", videoTrack: 2 }];
   const shot = (a, b, c) => ({ startSec: a, endSec: b, cameraId: c });

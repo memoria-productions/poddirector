@@ -1379,6 +1379,27 @@
   }
 
   /**
+   * The cut as multicam angle changes, for "Build as multicam": one { sec, camera, cameraId } per shot where the
+   * angle changes. A camera's angle is its video track + 1 (nesting V1, V2 keeps that order) unless it has its own
+   * `angle`. The first shot is included so the cut starts on the right angle (first: true); everything before it
+   * (outside the In/Out range) is left alone.
+   */
+  function toMulticamCuts(result, cameras) {
+    var byId = {};
+    cameras.forEach(function (c) { byId[c.id] = c; });
+    var out = [], prev = null;
+    result.shots.forEach(function (s, i) {
+      var cam = byId[s.cameraId];
+      if (!cam) return;
+      var angle = cam.angle || (cam.videoTrack + 1);
+      if (angle === prev) return;
+      out.push({ sec: s.startSec, camera: angle, cameraId: cam.id, first: i === 0 });
+      prev = angle;
+    });
+    return out;
+  }
+
+  /**
    * Edit instructions for the host. Per video track: where to razor and which stretches to enable.
    *
    * Layered (default): Premiere shows the top-most enabled clip, so the bottom camera track (usually the static
@@ -1440,7 +1461,7 @@
   }
 
   return {
-    VERSION: "0.8.4",
+    VERSION: "0.9.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
@@ -1450,6 +1471,7 @@
     plan: plan,
     planRange: planRange,
     toEditPayload: toEditPayload,
+    toMulticamCuts: toMulticamCuts,
     _internal: { smoothRuns: smoothRuns, calibrate: calibrate, percentile: percentile, shotAt: shotAt }
   };
 });

@@ -57,6 +57,10 @@
 
 - **Multicam by keystrokes, trial (v0.8.2):** reads the Cut to Camera shortcuts from Premiere's .kys file and presses them on a multicam clip (Settings > Multicam by keystrokes), as a first test of cutting real multicam sequences. v0.8.3 finds the shortcuts in a redirected Documents folder, accepts a nest with Multi-Camera enabled, and logs each step.
 
+## v0.9 (added)
+
+- **Build as multicam (experimental):** applies the planned cut to a Multi-Camera nest by pressing Cut to Camera at each angle change (angle = the camera's original track), with progress, Stop, Resume, and a count of the pieces afterwards to check every cut landed.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

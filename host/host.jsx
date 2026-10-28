@@ -312,6 +312,58 @@ var PD = (function () {
     return ok({ sequenceID: seq.sequenceID, name: seq.name, playheadSec: at, fps: fps, multicam: found });
   }
 
+  /**
+   * For Build as multicam: the multicam (or nested) clips on one track that together cover [startSec, endSec].
+   * Picks the track with the most multicam/nest coverage of the range; a real multicam source wins over a nest.
+   * json: { startSec, endSec } -> { sequenceID, name, fps, track, multicam, coveredSec, gaps: [[a,b]], clips }
+   */
+  function multicamCovering(json) {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var p = JSON.parse(json), best = null;
+    for (var i = 0; i < seq.videoTracks.numTracks; i++) {
+      var vt = seq.videoTracks[i], covered = 0, mcAll = true, spans = [], n = 0;
+      for (var c = 0; c < vt.clips.numItems; c++) {
+        var clip = vt.clips[c], a = sec(clip.start), b = sec(clip.end);
+        if (b <= p.startSec || a >= p.endSec) continue;
+        var mc = false, isSeq = false;
+        try { mc = !!(clip.projectItem && clip.projectItem.isMulticamClip && clip.projectItem.isMulticamClip()); } catch (e) { mc = false; }
+        try { isSeq = !!(clip.projectItem && clip.projectItem.isSequence && clip.projectItem.isSequence()); } catch (e2) { isSeq = false; }
+        if (!mc && !isSeq) continue;
+        if (!mc) mcAll = false;
+        n++;
+        spans.push([Math.max(a, p.startSec), Math.min(b, p.endSec)]);
+        covered += Math.min(b, p.endSec) - Math.max(a, p.startSec);
+      }
+      if (!n) continue;
+      if (!best || covered > best.coveredSec + 0.01 || (Math.abs(covered - best.coveredSec) <= 0.01 && mcAll && !best.multicam)) {
+        var gaps = [], at = p.startSec;
+        spans.sort(function (x, y) { return x[0] - y[0]; });
+        for (var s = 0; s < spans.length; s++) { if (spans[s][0] > at + 0.05) gaps.push([at, spans[s][0]]); at = Math.max(at, spans[s][1]); }
+        if (at < p.endSec - 0.05) gaps.push([at, p.endSec]);
+        best = { track: i, multicam: mcAll, coveredSec: covered, gaps: gaps, clips: n };
+      }
+    }
+    var fps = 30;
+    try { fps = Math.round(TPS / parseFloat(seq.timebase) * 1000) / 1000; } catch (e3) { fps = 30; }
+    var r = { sequenceID: seq.sequenceID, name: seq.name, fps: fps };
+    if (best) for (var k in best) if (best.hasOwnProperty(k)) r[k] = best[k];
+    return ok(r);
+  }
+
+  /** json: { track, startSec, endSec } -> { clips }: how many pieces a track has inside a range (after cutting). */
+  function countClips(json) {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var p = JSON.parse(json), vt = seq.videoTracks[p.track], n = 0;
+    if (!vt) return fail("Video track V" + (p.track + 1) + " not found.");
+    for (var c = 0; c < vt.clips.numItems; c++) {
+      var a = sec(vt.clips[c].start), b = sec(vt.clips[c].end);
+      if (b > p.startSec + 0.02 && a < p.endSec - 0.02) n++;
+    }
+    return ok({ clips: n });
+  }
+
   /** json: { sequenceID, tracks: [index] } — turn track output (the eye) on for these video tracks. */
   function showTracks(json) {
     var seq = seqOrFail();
@@ -341,5 +393,6 @@ var PD = (function () {
 
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
-           razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, multicamAtPlayhead: multicamAtPlayhead, openSequenceById: openSequenceById, setInOut: setInOut };
+           razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, multicamAtPlayhead: multicamAtPlayhead,
+           multicamCovering: multicamCovering, countClips: countClips, openSequenceById: openSequenceById, setInOut: setInOut };
 })();

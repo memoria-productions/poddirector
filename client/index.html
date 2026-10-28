@@ -17,6 +17,7 @@
   <div id="kbdBanner" class="kbd-banner hidden" role="alert" aria-live="assertive">
     <div class="kbd-big" id="kbdBannerBig"></div>
     <div class="kbd-small" id="kbdBannerSmall"></div>
+    <button id="btnKbdBannerStop" class="btn small kbd-stop">Stop</button>
   </div>
 
   <div id="updateBanner" class="update-banner hidden">
@@ -130,6 +131,11 @@
       <button id="btnUndoRecut" class="btn ghost" disabled title="Put the previous cut back on that copy">Undo recut</button>
     </div>
     <div id="recutNote" class="muted small"></div>
+    <div class="actions two">
+      <button id="btnBuildMc" class="btn" disabled title="Experimental. Applies this cut to a multicam clip in the active sequence by pressing your Cut to Camera shortcuts. In a duplicate of this sequence, Nest the camera clips and enable Multi-Camera on the nest first.">Build as multicam (experimental)</button>
+      <button id="btnResumeMc" class="btn ghost hidden" title="Carry on from where the last multicam build of this sequence stopped">Resume</button>
+    </div>
+    <div id="mcNote" class="muted small"></div>
     <div class="actions two">
       <button id="btnClearMarkers" class="btn ghost small">Clear PodDirector markers</button>
       <button id="btnExportPlan" class="btn ghost small" disabled>Export analysis for Claude</button>
