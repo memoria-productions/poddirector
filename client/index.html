@@ -14,6 +14,11 @@
     <button id="btnScan" class="btn">Scan sequence</button>
   </header>
 
+  <div id="kbdBanner" class="kbd-banner hidden" role="alert" aria-live="assertive">
+    <div class="kbd-big" id="kbdBannerBig"></div>
+    <div class="kbd-small" id="kbdBannerSmall"></div>
+  </div>
+
   <div id="updateBanner" class="update-banner hidden">
     <span id="updateText"></span>
     <button id="btnUpdateNow" class="btn primary small">Update now</button>
@@ -221,7 +226,7 @@
 
     <div class="card">
       <h2>Multicam by keystrokes <small>experimental trial</small></h2>
-      <p class="muted small">Premiere has no script command to switch a multicam angle, so PodDirector presses your <b>Cut to Camera</b> shortcuts for you. To try it: open a sequence with a multicam clip on it (ideally a duplicate), park the playhead where the trial should start, click <b>Run trial</b>, then click once in the Timeline during the countdown. Don't touch the mouse or keyboard until it finishes; switching to another window stops it.</p>
+      <p class="muted small">Premiere has no script command to switch a multicam angle, so PodDirector presses your <b>Cut to Camera</b> shortcuts for you. To try it: open a sequence with a multicam clip on it (ideally a duplicate), park the playhead where the trial should start, click <b>Run trial</b>, then <b>click once in the Timeline during the countdown</b> (a yellow bar at the top counts down). Don't touch the mouse or keyboard until it finishes; switching to another window stops it.</p>
       <div id="kbdKeys" class="small"></div>
       <div class="kbd-opts">
         <label>Cuts <input id="kbdCount" type="number" min="2" max="40" value="6" /></label>

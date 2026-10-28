@@ -1764,6 +1764,15 @@
     kbdStop = false;
     function say(t) { $("kbdStatus").textContent = t; status(t, ""); }
     function step(t) { log("Keystroke trial: " + t); }
+    // The pinned bar at the top: mode "click" (countdown), "running" (typing), or null to hide it.
+    function banner(mode, big, small) {
+      var b = $("kbdBanner");
+      b.classList.toggle("hidden", !mode);
+      b.classList.toggle("click", mode === "click");
+      b.classList.toggle("running", mode === "running");
+      $("kbdBannerBig").innerHTML = big || "";
+      $("kbdBannerSmall").textContent = small || "";
+    }
     step("keys " + k.cams[0].label + " / " + k.cams[1].label + " from " + k.file.path);
     step("looking for a multicam clip under the playhead");
     return callHostWithin(10000, "multicamAtPlayhead").then(function (r) {
@@ -1780,6 +1789,7 @@
       function tick() {
         if (kbdStop) throw new Error("Stopped.");
         if (n === 0) return null;
+        banner("click", "Click once in the Timeline now <b>" + n + "</b>", "PodDirector types into whatever has focus. Then hands off until it's done.");
         say("Click once in the Timeline now… starting in " + n--);
         return wait(1000).then(tick);
       }
@@ -1797,6 +1807,7 @@
         if (at >= info.multicam.endSec - 0.1) return null; // past the end of the multicam clip
         var cam = i % 2 === 0 ? k.cams[1] : k.cams[0];
         i++;
+        banner("running", "Cutting — hands off", "Cut " + i + " of " + count + ": camera " + cam.camera + " at " + fmt(at) + ". Switching windows stops it.");
         say("Cut " + i + " of " + count + ": camera " + cam.camera + " at " + fmt(at));
         return callHostWithin(10000, "setPlayhead", [at]).then(function () { return wait(pause); }).then(function () {
           return sender.send(cam.usable);
@@ -1814,7 +1825,7 @@
         say("Sent " + sent.length + " cuts in " + ((Date.now() - t0) / 1000).toFixed(1) + " s, from " + fmt(info.playheadSec) +
           ". Check the timeline: there should be a cut every " + every + " s, alternating camera 2 and 1. The times are in the Log.");
       });
-    }).then(function () { if (sender) sender.close(); }, function (e) { if (sender) sender.close(); $("kbdStatus").textContent = e.message; throw e; });
+    }).then(function () { banner(null); if (sender) sender.close(); }, function (e) { banner(null); if (sender) sender.close(); $("kbdStatus").textContent = e.message; throw e; });
   });
 
   /**

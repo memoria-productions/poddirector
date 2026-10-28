@@ -221,7 +221,7 @@ Premiere has no script command to switch a multicam angle, but its **Cut to Came
 
 1. It shows the shortcuts it found in your keyboard shortcuts file (Ctrl+1 and Ctrl+2 by default). Any letter, digit or symbol key, with any modifiers, works. Arrow and function keys can't be typed yet.
 2. Open a sequence with a multicam clip on it (a duplicate is safest) and park the playhead where the trial should start.
-3. Click **Run trial**, then click once in the Timeline during the five-second countdown. Don't touch the mouse or keyboard until it's done. If another window comes to the front, it stops.
+3. Click **Run trial**, then click once in the Timeline during the five-second countdown. A pulsing yellow bar at the top of the panel counts down; it turns green ("Cutting — hands off") while PodDirector types. Don't touch the mouse or keyboard until it's done. If another window comes to the front, it stops.
 4. It makes the set number of cuts, a few seconds apart, alternating camera 2 and camera 1, then puts the playhead back. The times are in the Log, so you can check each cut landed.
 
 **Pause** is the wait before and after each keypress; raise it if cuts are missed.
