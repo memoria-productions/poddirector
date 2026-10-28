@@ -238,6 +238,8 @@ Once the trial works, **Build as multicam** applies the whole planned cut to a r
 
 Each keypress is one undo step in Premiere. Run it on the duplicate, so your stacked-track sequence stays as it was.
 
+**Only between the In and Out marks** (under the button) builds just part of it: set In and Out marks on the multicam sequence, for example around a short test section, or a stretch you want to redo. PodDirector first adds edit points at In and Out. It then sets the angle the plan has at In, and types only the angle changes in between. Since Cut to Camera switches up to the next edit point, nothing after Out changes, including any angles you set by hand.
+
 ---
 
 ## 6. Updating

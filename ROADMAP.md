@@ -59,7 +59,7 @@
 
 ## v0.9 (added)
 
-- **Build as multicam (experimental):** applies the planned cut to a Multi-Camera nest by pressing Cut to Camera at each angle change (angle = the camera's original track), with progress, Stop, Resume, and a count of the pieces afterwards to check every cut landed.
+- **Build as multicam (experimental):** applies the planned cut to a Multi-Camera nest by pressing Cut to Camera at each angle change (angle = the camera's original track), with progress, Stop, Resume, and a count of the pieces afterwards to check every cut landed. v0.9.1: an option to build only between the multicam sequence's In and Out marks.
 
 ## Next candidates
 

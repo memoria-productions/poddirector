@@ -346,7 +346,13 @@ var PD = (function () {
     }
     var fps = 30;
     try { fps = Math.round(TPS / parseFloat(seq.timebase) * 1000) / 1000; } catch (e3) { fps = 30; }
-    var r = { sequenceID: seq.sequenceID, name: seq.name, fps: fps };
+    var r = { sequenceID: seq.sequenceID, name: seq.name, fps: fps, inSec: null, outSec: null };
+    try {
+      // The sequence's own In/Out marks (for building only part of it); unset marks read as 0 / the end.
+      var inS = parseFloat(seq.getInPoint()), outS = parseFloat(seq.getOutPoint()), endS = sec(seq.end);
+      if (isFinite(inS) && inS > 0.01) r.inSec = inS;
+      if (isFinite(outS) && outS > 0 && outS < endS - 0.01 && outS > (r.inSec || 0)) r.outSec = outS;
+    } catch (eIO) { /* older Premiere */ }
     if (best) for (var k in best) if (best.hasOwnProperty(k)) r[k] = best[k];
     return ok(r);
   }

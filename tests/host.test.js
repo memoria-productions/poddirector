@@ -230,6 +230,10 @@ test("multicamCovering finds the multicam track for a range; countClips counts t
   assert.equal(r.multicam, true);
   assert.deepEqual(r.gaps, []);
   assert.equal(Math.round(r.coveredSec), 20);
+  assert.equal(r.inSec, null, "no marks set");
+  fake.seq.getInPoint = () => "8"; fake.seq.getOutPoint = () => "18";
+  const m = call("PD.multicamCovering(" + q({ startSec: 5, endSec: 25 }) + ")");
+  assert.deepEqual([m.inSec, m.outSec], [8, 18]);
   // Two cuts with the razor, then count: three pieces inside the range.
   const qt = fake.ctx.qe.project.getActiveSequence().getVideoTrackAt(0);
   qt.razor("00:00:10:00"); qt.razor("00:00:20:00");

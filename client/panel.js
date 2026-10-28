@@ -1877,33 +1877,48 @@
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
     var cuts = D.toMulticamCuts(state.result, cams);
     if (!cuts.length) throw new Error("The planned cut is empty.");
-    var angles = []; cuts.forEach(function (c) { if (angles.indexOf(c.camera) < 0) angles.push(c.camera); });
-    var keys = keysFor(angles.sort());
     var shots = state.result.shots, startSec = cuts[0].sec, endSec = shots[shots.length - 1].endSec;
+    var onlyInOut = $("mcInOut").checked;
     function say(t) { $("mcNote").textContent = t; status(t, ""); }
     function step(t) { log("Build as multicam: " + t); }
-    var info = null, from = 0;
-    step("angles: " + cams.map(function (c) { return c.name + " = camera " + (c.angle || c.videoTrack + 1); }).join(", ") +
-      "; keys from " + keys.file.path);
+    var info = null, from = 0, keys = null;
     return callHostWithin(10000, "multicamCovering", [JSON.stringify({ startSec: startSec, endSec: endSec })]).then(function (r) {
       info = r;
       if (r.track === undefined) {
         throw new Error("“" + r.name + "” has no multicam clip. In a duplicate of this sequence, select the camera clips (V1, V2), Nest them, " +
           "right-click the nest > Multi-Camera > Enable, open that sequence and try again.");
       }
-      if (r.gaps.length) {
-        throw new Error("The multicam clip on V" + (r.track + 1) + " doesn't cover the whole cut: nothing multicam at " +
-          r.gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ") + ".");
+      // Only part of it: the multicam sequence's own In/Out marks, inside the planned cut.
+      if (onlyInOut) {
+        if (r.inSec === null && r.outSec === null) throw new Error("Set In and Out marks on “" + r.name + "” around the part to build, or untick “Only between the In and Out marks”.");
+        var lo = Math.max(startSec, r.inSec === null ? startSec : r.inSec), hi = Math.min(endSec, r.outSec === null ? endSec : r.outSec);
+        if (hi - lo < 0.5) throw new Error("The In/Out marks (" + fmt(r.inSec || 0) + "–" + fmt(r.outSec || endSec) + ") don't overlap the planned cut (" + fmt(startSec) + "–" + fmt(endSec) + ").");
+        startSec = lo; endSec = hi;
+        cuts = D.toMulticamCuts(state.result, cams, { startSec: lo, endSec: hi });
       }
+      var gaps = r.gaps.filter(function (g) { return g[1] > startSec + 0.05 && g[0] < endSec - 0.05; });
+      if (gaps.length) {
+        throw new Error("The multicam clip on V" + (r.track + 1) + " doesn't cover the whole " + (onlyInOut ? "In/Out range" : "cut") + ": nothing multicam at " +
+          gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ") + ".");
+      }
+      var angles = []; cuts.forEach(function (c) { if (angles.indexOf(c.camera) < 0) angles.push(c.camera); });
+      keys = keysFor(angles.sort());
+      step("angles: " + cams.map(function (c) { return c.name + " = camera " + (c.angle || c.videoTrack + 1); }).join(", ") + "; keys from " + keys.file.path);
       state.mcSeqId = r.sequenceID;
       var prev = mcRuns()[r.sequenceID];
-      if (resume && prev && prev.done < prev.cuts.length && prev.cuts.length === cuts.length) from = prev.done;
-      step("found " + (r.multicam ? "multicam" : "nested") + " clip(s) on V" + (r.track + 1) + " in “" + r.name + "”; " +
-        cuts.length + " angle changes" + (from ? ", resuming at " + (from + 1) : ""));
+      if (resume && prev && prev.done < prev.cuts.length && prev.cuts.length === cuts.length && Math.abs(prev.startSec - startSec) < 0.05) from = prev.done;
+      step("found " + (r.multicam ? "multicam" : "nested") + " clip(s) on V" + (r.track + 1) + " in “" + r.name + "”; " + cuts.length + " angle changes" +
+        (onlyInOut ? " between " + fmt(startSec) + " and " + fmt(endSec) : "") + (from ? ", resuming at " + (from + 1) : ""));
       var all = mcRuns(); all[r.sequenceID] = { cuts: cuts, done: from, track: r.track, startSec: startSec, endSec: endSec, at: new Date().toISOString() };
       store("mcRuns", all);
-      return typeCuts({ cuts: cuts, keys: keys, from: from, label: "Building multicam", say: say, step: step,
-        onCut: function (n) { var a = mcRuns(); if (a[r.sequenceID]) { a[r.sequenceID].done = n; store("mcRuns", a); } } });
+      // A partial build first gets edit points at In and Out, so the angle changes can't run on past Out
+      // (Cut to Camera switches up to the next edit point) and whatever follows stays exactly as it was.
+      var edges = onlyInOut && !from ? callHostWithin(15000, "razorTrack", [JSON.stringify({ sequenceID: r.sequenceID, track: r.track,
+        frames: [Math.round(startSec * r.fps), Math.round(endSec * r.fps)] })]).then(function (z) { step("edit points at In/Out: " + z.razored + " added"); }) : Promise.resolve();
+      return edges.then(function () {
+        return typeCuts({ cuts: cuts, keys: keys, from: from, label: "Building multicam", say: say, step: step,
+          onCut: function (n) { var a = mcRuns(); if (a[r.sequenceID]) { a[r.sequenceID].done = n; store("mcRuns", a); } } });
+      });
     }).then(function (res) {
       renderMcRow();
       return callHostWithin(10000, "countClips", [JSON.stringify({ track: info.track, startSec: startSec, endSec: endSec })]).then(function (c) {
@@ -2050,6 +2065,8 @@
   $("btnKbdBannerStop").onclick = function () { kbdStop = true; $("kbdBannerSmall").textContent = "Stopping after this cut…"; };
   $("btnBuildMc").onclick = function () { buildMulticam(false); };
   $("btnResumeMc").onclick = function () { buildMulticam(true); };
+  $("mcInOut").checked = !!load("mcInOut", false);
+  $("mcInOut").onchange = function () { store("mcInOut", this.checked); };
   renderKbdKeys();
   $("btnIntroMarkers").onclick = markNames;
   $("btnIntroClear").onclick = clearNames;

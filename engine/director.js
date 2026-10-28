@@ -1383,20 +1383,29 @@
    * angle changes. A camera's angle is its video track + 1 (nesting V1, V2 keeps that order) unless it has its own
    * `angle`. The first shot is included so the cut starts on the right angle (first: true); everything before it
    * (outside the In/Out range) is left alone.
+   * range { startSec, endSec } (optional): only that stretch, opening with the planned angle at startSec. The
+   * caller razors the multicam track at both ends first, so the angle changes stay inside the range.
    */
-  function toMulticamCuts(result, cameras) {
+  function toMulticamCuts(result, cameras, range) {
     var byId = {};
     cameras.forEach(function (c) { byId[c.id] = c; });
+    var angleOf = function (s) { var c = byId[s.cameraId]; return c ? { angle: c.angle || (c.videoTrack + 1), id: c.id } : null; };
     var out = [], prev = null;
     result.shots.forEach(function (s, i) {
-      var cam = byId[s.cameraId];
-      if (!cam) return;
-      var angle = cam.angle || (cam.videoTrack + 1);
-      if (angle === prev) return;
-      out.push({ sec: s.startSec, camera: angle, cameraId: cam.id, first: i === 0 });
-      prev = angle;
+      var a = angleOf(s);
+      if (!a || a.angle === prev) return;
+      out.push({ sec: s.startSec, camera: a.angle, cameraId: a.id, first: i === 0 });
+      prev = a.angle;
     });
-    return out;
+    if (!range) return out;
+    var shots = result.shots, lo = range.startSec, hi = range.endSec, open = null;
+    for (var k = 0; k < shots.length && !open; k++) if (shots[k].startSec <= lo + 1e-6 && shots[k].endSec > lo + 1e-6) open = angleOf(shots[k]);
+    var res = open ? [{ sec: lo, camera: open.angle, cameraId: open.id, first: true }] : [];
+    out.forEach(function (c) {
+      if (c.sec <= lo + 1e-3 || c.sec >= hi - 1e-3) return;
+      if (!res.length || res[res.length - 1].camera !== c.camera) res.push({ sec: c.sec, camera: c.camera, cameraId: c.cameraId });
+    });
+    return res;
   }
 
   /**
@@ -1461,7 +1470,7 @@
   }
 
   return {
-    VERSION: "0.9.0",
+    VERSION: "0.9.1",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

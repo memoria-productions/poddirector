@@ -206,6 +206,16 @@ test("multicam cut list: one angle change per shot, angle = video track + 1", ()
   list.slice(1).forEach((c, i) => assert.notEqual(c.camera, list[i].camera));
 });
 
+test("multicam cut list for an In/Out range: opens on the planned angle, nothing past Out", () => {
+  const cams = [{ id: "w", videoTrack: 0 }, { id: "solo", videoTrack: 1 }];
+  const shot = (a, b, c) => ({ startSec: a, endSec: b, cameraId: c });
+  const result = { shots: [shot(0, 10, "w"), shot(10, 20, "solo"), shot(20, 30, "w"), shot(30, 40, "solo")] };
+  const cuts = D.toMulticamCuts(result, cams, { startSec: 12, endSec: 25 });
+  assert.deepEqual(cuts.map((c) => [c.sec, c.camera]), [[12, 2], [20, 1]], "open on solo at 12, change to the wide at 20");
+  assert.ok(cuts[0].first);
+  assert.deepEqual(D.toMulticamCuts(result, cams, { startSec: 20, endSec: 31 }).map((c) => [c.sec, c.camera]), [[20, 1], [30, 2]]);
+});
+
 test("manual locks override the automatic choice", () => {
   const r = D.plan(conversation(), { speakers, cameras, overrides: [{ startSec: 15, endSec: 20, cameraId: "cW" }] });
   assert.equal(at(r, 17).cameraId, "cW");
