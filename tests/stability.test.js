@@ -163,3 +163,19 @@ test("a wide forced by a dolly move stays up for the minimum wide length", () =>
   assert.equal(w.cameraId, "W");
   assert.ok(w.endSec - w.startSec >= 4.99, "wide lasts " + (w.endSec - w.startSec));
 });
+
+test("follow cam without a framing reading: still on the last person until the operator moves", () => {
+  // Martin (A) talks to 30 s with the dolly on him; Tanya (B) talks 30-50 s, but the operator only swings to her at
+  // 39-40 s. Then Martin again from 50.5 s, the operator swinging back at 52-53 s.
+  const input = makeCurves([["A", 1, 30], ["B", 30.3, 50], ["A", 50.5, 75]], { durationSec: 76 });
+  input.cameraMotion = { F: motion(76, [[0, 0.5, 15], [39, 40, 15], [52, 53, 15]]) };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const r = D.plan(input, { speakers, cameras, style: base });
+  assert.equal(at(r, 15).cameraId, "F", "on Martin while he talks");
+  assert.equal(at(r, 33).cameraId, "W", "Tanya talks but the dolly is still on Martin: the wide");
+  assert.equal(at(r, 45).cameraId, "F", "the dolly has moved to her");
+  assert.equal(at(r, 51).cameraId, "W", "Martin again, dolly still on Tanya");
+  assert.equal(at(r, 60).cameraId, "F");
+  const off = D.plan(input, { speakers, cameras, style: Object.assign({ guessFraming: false }, base) });
+  assert.equal(at(off, 33).cameraId, "F", "the old behaviour: the dolly counts as a close-up of whoever talks");
+});

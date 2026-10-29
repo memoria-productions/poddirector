@@ -279,6 +279,15 @@ test("a multicam nest's angles are read through and mapped onto the outer timeli
   // A recut that moves camera 2 to the first piece: it turns Rose, the second gets its original label (5) back.
   call("PD.colorClips(" + q({ sequenceID: "seq-1", track: 0, ranges: [[5, 15]], color: 6, within: [5, 35], otherColor: 5 }) + ")");
   assert.deepEqual(fake.video[0]._clips.map((c) => c.label), [6, 5]);
+  // Selecting pieces for a Label shortcut: just the camera 2 piece, then the others, then nothing.
+  fake.video[0]._clips.forEach((c) => { c.sel = false; c.isSelected = function () { return this.sel; }; c.setSelected = function (s) { this.sel = s; }; });
+  fake.video[0]._clips[0].sel = true;
+  assert.equal(call("PD.selectClips(" + q({ sequenceID: "seq-1", track: 0, ranges: [[15, 35]] }) + ")").selected, 1);
+  assert.deepEqual(fake.video[0]._clips.map((c) => c.sel), [false, true]);
+  call("PD.selectClips(" + q({ track: 0, ranges: [[15, 35]], within: [5, 35], invert: true }) + ")");
+  assert.deepEqual(fake.video[0]._clips.map((c) => c.sel), [true, false]);
+  call("PD.selectClips(" + q({ track: 0, ranges: [] }) + ")");
+  assert.deepEqual(fake.video[0]._clips.map((c) => c.sel), [false, false]);
   delete fake.video[0]._clips[0].setColorLabel;
   assert.equal(call("PD.colorClips(" + q({ track: 0, ranges: [[0, 15]], color: 6 }) + ")").unsupported, true, "says so when Premiere can't");
 });

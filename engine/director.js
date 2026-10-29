@@ -48,6 +48,7 @@
     // Group / wide behaviour
     crosstalkMode: "wide",     // "wide" | "loudest" | "hold"
     crosstalkMinSec: 1.0,      // overlap must last this long before it counts as crosstalk
+    asideSec: 2.0,             // ...or this long when the same person talks before and after it (a brief aside over them)
     minWideSec: 5.0,           // a wide shot stays up at least this long, running into the next shot if needed (0 = use minimum shot)
     wideAfterSilenceSec: 3.0,  // go wide after this much silence (0 = never)
     openOnWideSec: 3.0,        // open the show on the wide for this long (0 = off)
@@ -58,6 +59,7 @@
     reactionShotSec: 1.6,      // length of a reaction shot
     reactionNoCloseup: "wide", // "wide" | "skip": a reaction from someone without a usable close-up (the dolly is on the speaker)
     groupReactWide: true,      // two or more listeners reacting at once (a laugh round the table) always cut to the wide
+    turnLookaheadSec: 4.0,     // no reaction or cutaway this close before the next turn: stay on the speaker, that cut is coming
     // Long monologues
     maxShotSec: 18,            // break a single shot longer than this (0 = never)
     cutawayMode: "mix",        // "wide" | "reaction" | "alternate" | "mix"
@@ -73,6 +75,8 @@
     comeBackSec: 3.0,          // after a move, only go back to the moving camera if it then stays usable this long (banter: stay wide)
     slowMovesOnAir: false,     // once on the shot, may gentle moves (push-ins, drifts) stay on air? off: operator reframes look sloppy
     movePadSec: 0.2,           // leave a move this early / come back this late
+    guessFraming: true,        // without "who's in the shot", a follow cam stays on whoever it settled on until it moves again
+    checkFramingByAudio: true, // a long steady stretch "on" someone silent while another does the talking is on the talker
     // Cleanup cuts (sections that will be removed)
     changeCameraAtCuts: true,  // the shots either side of a removed section must be different cameras (no jump cut)
     jumpCoverSec: 3.0,         // how long the covering shot stays up before going back (or until the next cut)
@@ -367,11 +371,14 @@
     });
 
     // Short overlaps are not crosstalk: give them to whoever already had the floor.
-    var minX = Math.round(style.crosstalkMinSec * fr);
+    // An aside (someone speaks briefly over a person who carries on afterwards) isn't crosstalk either.
+    var minX = Math.round(style.crosstalkMinSec * fr), aside = Math.round(Math.max(style.asideSec || 0, style.crosstalkMinSec) * fr);
     for (var i = 0; i < segs.length; i++) {
       var g = segs[i];
-      if (g.kind !== "group" || g.end - g.start >= minX) continue;
       var prev = segs[i - 1], next = segs[i + 1];
+      var heldThrough = prev && next && prev.kind === "solo" && next.kind === "solo" && prev.speakers[0] === next.speakers[0] &&
+        g.speakers.indexOf(prev.speakers[0]) >= 0;
+      if (g.kind !== "group" || g.end - g.start >= (heldThrough ? aside : minX)) continue;
       var holder = null;
       if (prev && prev.kind === "solo" && g.speakers.indexOf(prev.speakers[0]) >= 0) holder = prev.speakers[0];
       else if (next && next.kind === "solo" && g.speakers.indexOf(next.speakers[0]) >= 0) holder = next.speakers[0];
@@ -611,6 +618,10 @@
         });
       }
       group.forEach(function (k) { used[k] = true; });
+      // The same short bump on several mics at the same instant is one sound heard everywhere (a knock, a cough, the
+      // speaker's own laugh bleeding into the other mics), not people reacting: no shot at all.
+      var sync = Math.round(0.15 * fr), blip = Math.round(0.6 * fr);
+      if (group.length > 1 && group.every(function (k) { var o = interj[k]; return o.end - o.start < blip && Math.abs(o.start - ij.start) <= sync; })) return;
       var isGroup = group.length > 1;
       var roll = ctx.rand();
       if (!isGroup && roll > style.interjectionChance * (1 + featureOf(sp))) return;
@@ -622,9 +633,10 @@
       var a = Math.max(gs - lead, host.start);
       var b = Math.min(Math.max(ge + lead, a + len), host.end);
       if (a < lastEnd + Math.round(style.minShotSec * fr)) return; // don't stack reactions
-      // Leave room so the host shot survives on both sides.
+      // Leave room so the host shot survives on both sides, and stay on the speaker when the next turn is about to
+      // start anyway (a question running into its answer): that cut is coming, a reaction just before it is churn.
       var room = Math.round(Math.min(style.minShotSec, 1.0) * fr);
-      if (a - host.start < room || host.end - b < room) return;
+      if (a - host.start < room || host.end - b < Math.max(room, Math.round(style.turnLookaheadSec * fr))) return;
       var cam = null, reason = "reaction";
       if (isGroup || style.interjectionMode === "wide") { cam = ci.widest; reason = "interjection-wide"; }
       else {
@@ -641,6 +653,31 @@
       lastEnd = b;
     });
     return shots;
+  }
+
+  /**
+   * A follow cam picked for two speakers in a row makes one long shot. Split it where the floor changes hands, so
+   * a "monologue" is one person's turn (not a whole exchange) and each piece is checked against its own speaker.
+   */
+  function splitByFloor(shots, ctx) {
+    var out = [];
+    shots.forEach(function (s) {
+      if (s.locked || s.reason !== "speaker" || !s.speakers || s.speakers.length < 2) { out.push(s); return; }
+      var fl = ctx.floor, from = s.start, who = -1;
+      for (var f = s.start; f < s.end; f++) {
+        var w = fl[f];
+        if (w < 0) continue;
+        if (who >= 0 && w !== who) {
+          var p = copyShot(s); p.start = from; p.end = f; p.speakers = [who]; p.onset = s.onset && from === s.start;
+          out.push(p); from = f;
+        }
+        who = w;
+      }
+      var last = copyShot(s); last.start = from; last.onset = s.onset && from === s.start;
+      if (who >= 0) last.speakers = [who];
+      out.push(last);
+    });
+    return out;
   }
 
   // ------------------------------------------------------- 8. cutaways
@@ -664,7 +701,7 @@
       var first = true;
       for (var k = 1; k <= count; k++) {
         var target = s.start + Math.round(length * k / (count + 1)) - (cutLen >> 1);
-        var at = quietestFrame(ctx, target, cursor + minShot, s.end - minShot - cutLen);
+        var at = quietestFrame(ctx, target, cursor + minShot, s.end - Math.max(minShot, Math.round(style.turnLookaheadSec * fr)) - cutLen);
         if (at === null) continue;
         // A turn played on the wide breaks to the speaker's close-up instead.
         var cam = onWide ? ctx.ci.closeups(s.speakers[0])[0] : cutawayCamera(s, speakers, style, ctx, pick++);
@@ -923,6 +960,69 @@
     });
     return grids;
   }
+  /**
+   * Follow cams with motion but no "who's in the shot" reading: the operator only changes who's in frame by moving,
+   * so each steady stretch between moves shows whoever was talking as it began (the person they moved to). The dolly
+   * isn't on someone new just because they start talking: until it moves, it's still on the last person.
+   */
+  function guessFraming(ctx, cameras, mainRuns, style) {
+    if (!style.guessFraming) return;
+    var fr = ctx.fr, look = Math.round(6 * fr);
+    cameras.forEach(function (c) {
+      var g = ctx.stability.grid[c.id], info = ctx.stability.info[c.id];
+      if (ctx.framing[c.id] || !g || !ctx.ci.isFollow(c.id) || info.lowDetail || info.noFootage) return;
+      var stretches = [], s = -1;
+      for (var f = 0; f <= g.length; f++) {
+        // With slow moves allowed on air they're reframes (a push-in), not a move to someone else.
+        var steady = f < g.length && (g[f] === STEADY || (g[f] === SLOW && style.slowMovesOnAir));
+        if (steady && s < 0) s = f;
+        if (!steady && s >= 0) { stretches.push([s, f]); s = -1; }
+      }
+      if (stretches.length < 3) return; // hardly ever moves: no moves to go by
+      var talk = function (si, a, b) {
+        var n = 0;
+        mainRuns[si].forEach(function (r) { n += Math.max(0, Math.min(r[1], b) - Math.max(r[0], a)); });
+        return n;
+      };
+      var who = function (a, b) {
+        var best = -1, most = Math.round(0.5 * fr);
+        for (var si = 0; si < mainRuns.length; si++) { var n = talk(si, a, b); if (n > most) { most = n; best = si; } }
+        return best;
+      };
+      var grid = new Int16Array(ctx.frames).fill(-2);
+      stretches.forEach(function (st) {
+        var on = who(st[0], Math.min(st[1], st[0] + look));
+        if (on < 0) on = who(st[0], st[1]);
+        for (var f2 = st[0]; f2 < st[1]; f2++) grid[f2] = on;
+      });
+      ctx.framing[c.id] = grid;
+    });
+  }
+
+  /**
+   * The picture reading can lump two people together (similar shirts, same backdrop) and name a stretch after the
+   * wrong one. An operator frames whoever is talking, so a long steady stretch "on" someone who barely speaks
+   * while one other person does most of the talking is really on that person.
+   */
+  function checkFraming(ctx, mainRuns, style) {
+    if (!style.checkFramingByAudio) return;
+    var fr = ctx.fr, minLen = Math.round(8 * fr);
+    Object.keys(ctx.framing).forEach(function (cam) {
+      var g = ctx.framing[cam];
+      for (var a = 0; a < g.length;) {
+        var b = a; while (b < g.length && g[b] === g[a]) b++;
+        if (g[a] >= 0 && b - a >= minLen) {
+          var talk = mainRuns.map(function (runs) {
+            var n = 0; runs.forEach(function (r) { n += Math.max(0, Math.min(r[1], b) - Math.max(r[0], a)); }); return n / (b - a);
+          });
+          var top = 0; for (var si = 1; si < talk.length; si++) if (talk[si] > talk[top]) top = si;
+          if (top !== g[a] && talk[g[a]] < 0.25 && talk[top] >= 0.5) for (var f = a; f < b; f++) g[f] = top;
+        }
+        a = b;
+      }
+    });
+  }
+
   /** Can camera `cam` show any of `speakersIdx` over [a, b)? True when we know nothing about its framing. */
   function framingOk(ctx, cam, a, b, speakersIdx) {
     var g = ctx.framing && ctx.framing[cam];
@@ -945,9 +1045,15 @@
     shots.forEach(function (s) {
       var g = ctx.framing[s.cameraId];
       if (!g || s.locked || !s.speakers || !s.speakers.length) { out.push(s); return; }
-      var pieces = [], from = s.start, on = s.speakers.indexOf(g[s.start]) >= 0;
+      // A follow cam can carry one shot across a change of speaker: check it against whoever has the floor at
+      // each moment (in pauses, anyone the shot is about).
+      var fl = ctx.floor, okAt = function (f) {
+        var who = fl && s.reason === "speaker" ? fl[f] : -1;
+        return who >= 0 ? g[f] === who : s.speakers.indexOf(g[f]) >= 0;
+      };
+      var pieces = [], from = s.start, on = okAt(s.start);
       for (var f = s.start; f < s.end; f++) {
-        var ok = s.speakers.indexOf(g[f]) >= 0;
+        var ok = okAt(f);
         if (ok !== on) { pieces.push({ a: from, b: f, on: on }); from = f; on = ok; }
       }
       pieces.push({ a: from, b: s.end, on: on });
@@ -1068,10 +1174,11 @@
     if (!removals || !removals.length) return shots;
     var fr = ctx.fr, minShot = Math.round(style.minShotSec * fr);
     var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    // join: a content cut already in the timeline (startSec = endSec): nothing to remove, but the same jump to hide.
     removals.map(function (r) {
-      return { a: Math.max(0, Math.round(Math.min(r.startSec, r.endSec) * fr)), b: Math.min(ctx.frames, Math.round(Math.max(r.startSec, r.endSec) * fr)) };
-    }).filter(function (r) { return r.b > r.a; }).sort(function (x, y) { return x.a - y.a; }).forEach(function (r) {
-      shots = splitAt(splitAt(shots, r.a), r.b);
+      return { a: Math.max(0, Math.round(Math.min(r.startSec, r.endSec) * fr)), b: Math.min(ctx.frames, Math.round(Math.max(r.startSec, r.endSec) * fr)), join: !!r.join };
+    }).filter(function (r) { return r.b > r.a || (r.join && r.a > 0); }).sort(function (x, y) { return x.a - y.a; }).forEach(function (r) {
+      shots = r.join ? splitAt(shots, r.a) : splitAt(splitAt(shots, r.a), r.b);
       // The removed part itself: mark it so it never merges away (keeps edit points at both ends).
       shots.forEach(function (s) { if (s.start >= r.a && s.end <= r.b && !s.locked) { s.reason = "removed"; s.locked = true; s.removed = true; } });
       if (!style.changeCameraAtCuts || r.a === 0 || r.b >= ctx.frames) return;
@@ -1208,15 +1315,20 @@
     var segs = floorSegments(classified.main, speakers, style, fr, frames);
 
     var ctx = { fr: fr, frames: frames, curves: curves, speakers: speakers, cal: cal, rand: rng(style.seed) };
+    // Who has the floor, per frame (-1: nobody / several).
+    ctx.floor = new Int16Array(frames).fill(-1);
+    segs.forEach(function (sg) { if (sg.kind === "solo") for (var f = sg.start; f < Math.min(sg.end, frames); f++) ctx.floor[f] = sg.speakers[0]; });
     var built = buildShots(segs, speakers, cameras, style, ctx);
     ctx.ci = built.ci;
+    ctx.stability = buildStability(input, cameras, style, ctx);
+    ctx.stable = stabilityHelpers(ctx.stability, style, ctx);
     ctx.framing = buildFraming(input, cameras, speakers, ctx);
-    var shots = built.shots;
+    checkFraming(ctx, classified.main, style);
+    guessFraming(ctx, cameras, classified.main, style);
+    var shots = splitByFloor(built.shots, ctx);
     shots = applyInterjections(shots, classified.interjections, speakers, style, ctx);
     shots = applyCutaways(shots, speakers, style, ctx);
     shots = applyTiming(shots, style, ctx);
-    ctx.stability = buildStability(input, cameras, style, ctx);
-    ctx.stable = stabilityHelpers(ctx.stability, style, ctx);
     shots = applyStability(shots, style, ctx);
     shots = applyFraming(shots, style, ctx);
     shots = applyMinWide(shots, style, ctx);
@@ -1376,10 +1488,7 @@
    *   clips: [{ startSec, endSec, inPointSec, mediaPath, speed }]
    *   -> [{ startSec, endSec, lengthSec, cutBefore, cutAfter }]
    */
-  function shortSections(clips, minSec, opts) {
-    opts = opts || {};
-    var tol = 1.5 / (opts.fps || 30);
-    var lo = opts.rangeStart || 0, hi = opts.rangeEnd === undefined || opts.rangeEnd === null ? Infinity : opts.rangeEnd;
+  function sourcePieces(clips, tol) {
     var list = (clips || []).filter(function (c) { return c.endSec > c.startSec; })
       .slice().sort(function (a, b) { return a.startSec - b.startSec; });
     var pieces = [], cur = null;
@@ -1396,6 +1505,21 @@
       cur = { startSec: c.startSec, endSec: c.endSec, cutBefore: cut, cutAfter: false };
     });
     if (cur) pieces.push(cur);
+    return pieces;
+  }
+
+  /** The times of the content cuts in a camera track (same clip shape as shortSections), in seconds. */
+  function contentCuts(clips, opts) {
+    opts = opts || {};
+    return sourcePieces(clips, 1.5 / (opts.fps || 30)).filter(function (p) { return p.cutBefore; })
+      .map(function (p) { return round3(p.startSec); });
+  }
+
+  function shortSections(clips, minSec, opts) {
+    opts = opts || {};
+    var tol = 1.5 / (opts.fps || 30);
+    var lo = opts.rangeStart || 0, hi = opts.rangeEnd === undefined || opts.rangeEnd === null ? Infinity : opts.rangeEnd;
+    var pieces = sourcePieces(clips, tol);
     var out = [];
     pieces.forEach(function (p) {
       var a = Math.max(p.startSec, lo), b = Math.min(p.endSec, hi);
@@ -1566,12 +1690,12 @@
   }
 
   return {
-    VERSION: "0.15.0",
+    VERSION: "0.16.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
     styleFromPreset: styleFromPreset,
-    shortSections: shortSections,
+    shortSections: shortSections, contentCuts: contentCuts,
     presetForSubjects: presetForSubjects,
     plan: plan,
     planRange: planRange,

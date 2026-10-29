@@ -464,6 +464,34 @@ var PD = (function () {
     return ok({ colored: n, unsupported: false });
   }
 
+  /**
+   * json: { sequenceID, track, ranges, within?, invert? } -> { selected, unsupported }: select just the pieces on a
+   * track whose middle is in a range (invert: the pieces inside within that aren't), so the panel can press a
+   * Label shortcut on them. Everything else in the sequence is deselected; empty ranges just clear the selection.
+   */
+  function selectClips(json) {
+    var seq = seqOrFail();
+    if (!seq) return fail("No active sequence.");
+    var p = JSON.parse(json);
+    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the built sequence is not the active sequence.");
+    var vt = seq.videoTracks[p.track], n = 0, kinds = [seq.videoTracks, seq.audioTracks];
+    if (!vt) return fail("Video track V" + (p.track + 1) + " not found.");
+    try {
+      for (var g = 0; g < kinds.length; g++) for (var t = 0; t < kinds[g].numTracks; t++) {
+        var cl = kinds[g][t].clips;
+        for (var c = 0; c < cl.numItems; c++) if (cl[c].isSelected && cl[c].isSelected()) cl[c].setSelected(false, true);
+      }
+      var r = p.ranges.slice().sort(function (a, b) { return a[0] - b[0]; });
+      for (var i = 0; i < vt.clips.numItems; i++) {
+        var clip = vt.clips[i], mid = (sec(clip.start) + sec(clip.end)) / 2, hit = false;
+        for (var k = 0; k < r.length && r[k][0] <= mid; k++) if (mid < r[k][1]) { hit = true; break; }
+        if (p.invert) hit = !hit && mid >= p.within[0] && mid < p.within[1];
+        if (hit) { clip.setSelected(true, true); n++; }
+      }
+    } catch (e) { return ok({ selected: n, unsupported: true, error: String(e) }); }
+    return ok({ selected: n, unsupported: false });
+  }
+
   /** json: { track, startSec, endSec } -> { clips }: how many pieces a track has inside a range (after cutting). */
   function countClips(json) {
     var seq = seqOrFail();
@@ -510,5 +538,5 @@ var PD = (function () {
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
            razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, multicamAtPlayhead: multicamAtPlayhead,
-           multicamCovering: multicamCovering, countClips: countClips, colorClips: colorClips, openSequenceById: openSequenceById, setInOut: setInOut };
+           multicamCovering: multicamCovering, countClips: countClips, colorClips: colorClips, selectClips: selectClips, openSequenceById: openSequenceById, setInOut: setInOut };
 })();

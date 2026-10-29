@@ -45,16 +45,27 @@
     return (k.ctrl ? "Ctrl+" : "") + (k.alt ? "Alt+" : "") + (k.shift ? "Shift+" : "") + (k.key !== null ? k.key.toUpperCase() : "key #" + k.code);
   }
 
-  /** The keys for "Cut to Camera 1..n": [{ camera, keys: [..], usable }]; usable = a printable key we can type. */
+  /** A command's Timeline (or global) keys: { keys: [..], usable, label }; usable = a printable key we can type. */
+  function commandKey(shortcuts, cmd) {
+    var keys = (shortcuts[cmd] || []).filter(function (k) { return k.context === "global" || k.context === "timeline"; });
+    var usable = keys.filter(function (k) { return k.key !== null; })[0] || null;
+    return { keys: keys, usable: usable, label: usable ? describe(usable) : keys.length ? describe(keys[0]) : null };
+  }
+
+  /** The keys for "Cut to Camera 1..n": [{ camera, keys: [..], usable, label }]. */
   function cutToCameraKeys(shortcuts, n) {
     var res = [];
     for (var i = 1; i <= (n || 4); i++) {
-      var keys = (shortcuts["cmd.multicam.choose.camera." + i] || []).filter(function (k) { return k.context === "global" || k.context === "timeline"; });
-      var usable = keys.filter(function (k) { return k.key !== null; })[0] || null;
-      res.push({ camera: i, keys: keys, usable: usable, label: usable ? describe(usable) : keys.length ? describe(keys[0]) : null });
+      var k = commandKey(shortcuts, "cmd.multicam.choose.camera." + i);
+      k.camera = i; res.push(k);
     }
     return res;
   }
+
+  /** Premiere's label colours in Edit > Label order; index n is the command cmd.edit.label.n. */
+  var LABELS = ["Violet", "Iris", "Caribbean", "Lavender", "Cerulean", "Forest", "Rose", "Mango",
+                "Purple", "Blue", "Teal", "Magenta", "Tan", "Green", "Brown", "Yellow"];
+  function labelKey(shortcuts, index) { return commandKey(shortcuts, "cmd.edit.label." + index); }
 
   /**
    * Where Windows really keeps Documents. Folder redirection (e.g. to a network share) moves it away from
@@ -182,6 +193,6 @@
     });
   }
 
-  return { parseShortcuts: parseShortcuts, cutToCameraKeys: cutToCameraKeys, describe: describe,
+  return { parseShortcuts: parseShortcuts, cutToCameraKeys: cutToCameraKeys, commandKey: commandKey, labelKey: labelKey, LABELS: LABELS, describe: describe,
            findShortcutFiles: findShortcutFiles, documentsFolders: documentsFolders, startSender: startSender };
 });

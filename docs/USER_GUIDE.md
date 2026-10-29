@@ -66,7 +66,7 @@ Tips:
 
 ## 4. Tuning the style
 
-The **Cutting style** card shows only the few controls you'll usually touch: a mode, the close-ups/wide slider, **Max cuts / min**, **Minimum close-up**, **Minimum wide**, and a **Feature** slider for each person. Everything else is under **Advanced**, which stays folded until you open it. If you've changed anything in there, the Advanced heading says how many settings, and those groups open by themselves. Controls you've changed from the mode turn blue. Click **Save** to store your own preset.
+The **Cutting style** card shows only the few controls you'll usually touch: a mode, the close-ups/wide slider, **Max cuts / min**, **Minimum close-up**, **Minimum wide**, and a **Feature** slider for each person. Everything else is under **Advanced**, which stays folded until you open it. If you've changed anything in there, the Advanced heading says how many settings, and those groups open by themselves. Controls you've changed from the mode turn blue. Double-click any slider to put it back to the mode's default (speaker and cleanup sliders go back to theirs). Click **Save** to store your own preset.
 
 ### Mode
 
@@ -107,8 +107,13 @@ Pick the mode closest to the show; it sets every setting at once. The line under
 
 - **Talking over:** what to show when two or more people talk at once. Go wide, stay on the loudest person, or hold the current shot.
 - **Overlap time:** how long the overlap has to last before it counts as crosstalk.
+- **Brief aside** (2 s): someone speaking briefly over a person who carries on afterwards isn't crosstalk unless it lasts this long. The shot stays on the person talking.
 - **Wide on pauses:** cut to the wide after this much silence.
 - **Open on wide:** start the show on the wide shot.
+
+### Content cuts
+
+When you've taken a section out of the episode, the source jumps at that point. Shown on the same camera, that's a jump cut. PodDirector finds these content cuts on the wide's track and changes camera exactly on the cut. Off the wide, it goes to the solo of whoever speaks right after the cut, or a listener if they have none. Off a solo, it goes to the wide. After **Cover shot** seconds it goes back, or carries on to the next natural cut. These show as "cut cover" in the stats. **Across a cut** turns this off. Sections you tick on the Cleanup tab get the same treatment.
 
 ### Reactions and interjections
 
@@ -118,7 +123,8 @@ These are listener reactions like "Yeah", laughs, and quick remarks.
 - **Reaction frequency:** the share of interjections that get a shot. This keeps the edit from cutting away constantly.
 - **Interjection length:** speech shorter than this, over someone else, counts as an interjection rather than a new turn.
 - **No close-up of them:** when the person reacting has no camera of their own, or the dolly isn't on them, *Cut to the wide* (the default) shows the room. *Stay on the speaker* skips the reaction.
-- **Several react at once:** when two or more listeners laugh or chime in within a second of each other, *Always cut to the wide* shows the group. These cuts don't count against Reaction frequency.
+- **Several react at once:** when two or more listeners laugh or chime in within a second of each other, *Always cut to the wide* shows the group. These cuts don't count against Reaction frequency. The same short bump on several mics at the same instant is one sound heard everywhere (a knock, a cough, the speaker's own laugh bleeding into the other mics), so it gets no shot at all.
+- **Hold before next turn:** no reaction or cutaway this close before someone else takes over. A question running into its answer stays on the person asking, and the next cut is to the person answering.
 
 ### Moving cameras
 
@@ -130,6 +136,8 @@ This group appears once **Check for movement** is on for a camera. PodDirector m
 - **Slow moves on air:** keep gentle push-ins on screen once you're on that camera, or cut away from any movement. It's off by default, so any visible reframing or drift cuts to the wide.
 - **Leave move early by:** how early to cut away before a big move starts.
 - **Come back after** (3 s by default): after a move, PodDirector goes back to the moving camera only if it then stays steady at least this long. During quick banter, the operator keeps swinging between people, so the cut stays on the wide instead of flicking dolly–wide–dolly. Set it to 0 to go back as soon as the camera settles.
+- **Who it's on** (when there's no **Who's in the shot** reading): *Whoever it settled on* (the default) assumes the operator only changes who's in frame by moving. Each steady stretch shows whoever was talking as it began. When someone else starts talking, the cut goes to the wide until the operator swings round, instead of holding the dolly on the wrong person. *Whoever is talking* trusts the operator to always be on the speaker. A **Who's in the shot** reading, when you have one, always wins.
+- **Check names by voice** (on): the picture reading can lump two people together and name a stretch after the wrong one. An operator frames whoever is talking, so a steady stretch of 8 s or more "on" someone who barely speaks (under 25%), while one other person does most of the talking (50% or more), counts as on the person talking. Shorter holds on a listener are left alone.
 
 The wide is the safety shot. Cutting *to* it never waits for anything: not settle time, not reaction delay, and not a late cut timing. When the dolly starts moving, the cut goes to the wide just before the move. A reaction (a laugh, a "yeah") on the dolly is only used when the dolly is steady for the whole reaction; otherwise it plays on the wide.
 
@@ -201,7 +209,7 @@ Under the preview you'll see the number of cuts, cuts per minute, average and lo
    - **Interruptions:** phones and alarms ("let me silence my phone", "sorry, that's my alarm", Whisper's own *[phone ringing]* tags), someone at the door, "I have to take this". The suggestion runs from the ring through the "okay, sorry about that", and stops where the conversation picks back up.
    - **Technical chatter:** "hold on", "is the camera still recording?" These are flagged with lower confidence.
 3. Each suggestion shows its time range, confidence, and transcript text. **Click** a suggestion to jump Premiere's playhead there. Use the arrow buttons to nudge the start or end by 0.5 s, and untick any you want to keep.
-4. Ticked suggestions also feed the multicam cut. Removing a section joins the shot before it to the shot after it, so PodDirector makes sure those two are **different cameras**. Typically it goes to the wide for a few seconds, then back, which hides the jump. You'll see a "cut cover" shot in the preview. The **Cleanup cuts** group in the cutting style turns this on or off and sets how long the cover shot lasts. If you've already built the copy, click **Recut** afterwards so it picks this up.
+4. Ticked suggestions also feed the multicam cut. Removing a section joins the shot before it to the shot after it, so PodDirector makes sure those two are **different cameras**. Typically it goes to the wide for a few seconds, then back, which hides the jump. You'll see a "cut cover" shot in the preview. The **Content cuts** group in the cutting style turns this on or off and sets how long the cover shot lasts. If you've already built the copy, click **Recut** afterwards so it picks this up.
 5. **Mark selected on timeline** adds red range markers. Review them in context, then lift or ripple-delete the ones you agree with. PodDirector never deletes anything for you.
 6. **Copy for Claude review** copies the flagged list plus the full transcript, ready to paste into Claude for a second opinion.
 
@@ -251,7 +259,9 @@ If a sequence's cameras get nested after you set it up, and its saved setup stil
 
 **Mark camera moves** (Multicam tab, below the markers buttons) shows what the movement check found. It puts a marker over every stretch where a moving camera is moving on the analyzed sequence: **red** for big moves (re-frames, whips), **orange** for slow drifts. These are exactly the stretches the cut keeps that camera off air. **Clear PodDirector markers** removes them.
 
-**Label camera 2 shots Rose** (on by default): after any build, multicam or stacked, every camera 2 shot gets the Rose label colour on the timeline, so the solo-cam shots stand out. Only the timeline clips change, not the source in the project. If your Premiere doesn't let scripts set clip label colours, the Log says so and nothing else changes.
+**Label camera 2 shots** (on by default, Rose unless you pick another of Premiere's 16 label colours): after a build, every camera 2 shot gets that label colour on the timeline, so the solo-cam shots stand out. Only the timeline clips change, not the source in the project.
+
+Scripts often can't set a clip's label colour, so a multicam build does it the same way it cuts. Give **Edit > Label > *your colour*** a keyboard shortcut (**Edit > Keyboard Shortcuts**, search "Rose", for example, and press a key combination such as Ctrl+Alt+Shift+R). Once the cuts are typed, PodDirector selects the camera 2 pieces and presses it, while the Timeline still has focus. The note under the colour shows the shortcut it found. On a recut or undo, pieces that are no longer camera 2 get their original colour back if that colour has a shortcut too. Without a shortcut, and for stacked builds, PodDirector tries the script call and the Log says what happened.
 
 If the multicam clip doesn't reach somewhere the plan does, there's no footage there to switch. This is common at the very end, where the audio or the Out mark runs a few seconds past the cameras. The build skips those stretches and says where. A gap in the middle is skipped too, and the angle is set again where the footage resumes.
 
@@ -261,7 +271,7 @@ If the multicam clip doesn't reach somewhere the plan does, there's no footage t
 
 ## 6. Updating
 
-PodDirector checks for a newer version when the panel opens (at most twice a day). When one is available, a blue bar at the top offers **Update now**, which downloads and installs it. You can also check by hand under **Settings → Updates**.
+PodDirector checks for a newer version a few seconds after the panel opens, and again every 2 hours while it stays open. When one is available, a blue bar at the top offers **Update now**, which downloads and installs it. You can also check by hand under **Settings → Updates**.
 
 Once it's installed, click **Reload PodDirector** in the bar to start using the new version. There's no need to restart Premiere Pro, and your settings are kept. Wait for any build or recut to finish first. The same button is under **Settings → Updates**. Closing the panel and reopening it from **Window → Extensions → PodDirector** does the same thing.
 

@@ -52,13 +52,14 @@ test("groups the dolly's steady stretches by who is in frame and names them from
 
 test("engine: the follow cam is only used when it is on the person talking", () => {
   const input = makeCurves([["P", 1, 60]], { durationSec: 62, speakers: ["P", "J"] });
-  input.framing = { F: [{ startSec: 0, endSec: 20, speakerId: "P" }, { startSec: 21.5, endSec: 40, speakerId: "J" }, { startSec: 41.5, endSec: 62, speakerId: "P" }] };
+  // The operator holds on Jess for a few seconds (a listener shot) while Paul talks.
+  input.framing = { F: [{ startSec: 0, endSec: 20, speakerId: "P" }, { startSec: 21.5, endSec: 27, speakerId: "J" }, { startSec: 28.5, endSec: 62, speakerId: "P" }] };
   const cameras = [{ id: "W", videoTrack: 0, shows: ["P", "J"] }, { id: "F", videoTrack: 1, shows: [], follows: true }];
   const r = D.plan(input, { speakers: [{ id: "P", name: "Paul" }, { id: "J", name: "Jess" }], cameras, style: { openOnWideSec: 0, maxShotSec: 0 } });
   const at = (t) => r.shots.find((s) => s.startSec <= t && s.endSec > t);
   assert.equal(at(10).cameraId, "F");
-  assert.equal(at(30).cameraId, "W", "dolly is on Jess while Paul talks: show the wide");
-  assert.equal(at(30).reason, "framing");
+  assert.equal(at(24).cameraId, "W", "dolly is on Jess while Paul talks: show the wide");
+  assert.equal(at(24).reason, "framing");
   assert.equal(at(50).cameraId, "F");
 });
 
@@ -95,11 +96,42 @@ test("engine: two listeners reacting together always cut to the wide", () => {
 
 test("engine: a listener's reaction can use the follow cam when it happens to be on them", () => {
   const input = makeCurves([["P", 1, 60], ["J", 30, 30.6]], { durationSec: 62, speakers: ["P", "J"] });
-  input.framing = { F: [{ startSec: 0, endSec: 25, speakerId: "P" }, { startSec: 26, endSec: 40, speakerId: "J" }, { startSec: 41, endSec: 62, speakerId: "P" }] };
+  input.framing = { F: [{ startSec: 0, endSec: 25, speakerId: "P" }, { startSec: 26, endSec: 32, speakerId: "J" }, { startSec: 33, endSec: 62, speakerId: "P" }] };
   const cameras = [{ id: "W", videoTrack: 0, shows: ["P", "J"] }, { id: "F", videoTrack: 1, shows: [], follows: true }];
   const r = D.plan(input, { speakers: [{ id: "P", name: "Paul" }, { id: "J", name: "Jess" }], cameras,
     style: { openOnWideSec: 0, maxShotSec: 0, interjectionMode: "reaction", interjectionChance: 1 } });
   const s = r.shots.find((x) => x.startSec <= 30.3 && x.endSec > 30.3);
   assert.equal(s.cameraId, "F");
   assert.equal(s.reason, "reaction");
+});
+
+test("engine: Jess's question stays on Jess through a bump on every mic, and no reaction just before Martin answers", () => {
+  // Jess asks a long question (1-40 s); Martin answers from 40 s. At 20 s one short sound hits the other three mics at
+  // the same instant (a knock, or Jess's own laugh bleeding in). At 37.5 s Paul says "mm" just before the answer.
+  const input = makeCurves([["J", 1, 40], ["P", 20, 20.35], ["T", 20.05, 20.4], ["M", 20.02, 20.3], ["P", 37.3, 37.9], ["M", 40, 70]],
+    { durationSec: 72, speakers: ["J", "P", "T", "M"] });
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["J", "P", "T", "M"] }, { id: "cJ", videoTrack: 1, shows: ["J"] },
+    { id: "cP", videoTrack: 2, shows: ["P"] }, { id: "cT", videoTrack: 3, shows: ["T"] }, { id: "cM", videoTrack: 4, shows: ["M"] }];
+  const sp = ["J", "P", "T", "M"].map((id) => ({ id, name: id }));
+  const style = { openOnWideSec: 0, maxShotSec: 0, interjectionMode: "reaction", interjectionChance: 1 };
+  const r = D.plan(input, { speakers: sp, cameras, style });
+  const at = (t) => r.shots.find((x) => x.startSec <= t && x.endSec > t);
+  assert.equal(at(20.2).cameraId, "cJ", "the bump is not a reaction");
+  assert.equal(at(37.6).cameraId, "cJ", "the answer is coming: stay on the question");
+  assert.equal(at(45).cameraId, "cM");
+  const early = D.plan(input, { speakers: sp, cameras, style: Object.assign({}, style, { turnLookaheadSec: 0 }) });
+  assert.equal(early.shots.find((x) => x.startSec <= 37.6 && x.endSec > 37.6).cameraId, "cP", "look-ahead off: Paul's reaction plays");
+});
+
+test("engine: a long dolly stretch named after someone silent while another talks is on the talker", () => {
+  // The picture reading lumped Jess in with Tanya: 40 s of the dolly "on Tanya" while Jess does all the talking.
+  const input = makeCurves([["P", 1, 20], ["J", 21, 62]], { durationSec: 64, speakers: ["P", "J", "T"] });
+  input.framing = { F: [{ startSec: 0, endSec: 20, speakerId: "P" }, { startSec: 22, endSec: 64, speakerId: "T" }] };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["P", "J", "T"] }, { id: "F", videoTrack: 1, shows: [], follows: true }];
+  const sp = [{ id: "P", name: "Paul" }, { id: "J", name: "Jess" }, { id: "T", name: "Tanya" }];
+  const style = { openOnWideSec: 0, maxShotSec: 0 };
+  const at = (r, t) => r.shots.find((s) => s.startSec <= t && s.endSec > t);
+  assert.equal(at(D.plan(input, { speakers: sp, cameras, style }), 45).cameraId, "F", "Jess's solo");
+  const off = D.plan(input, { speakers: sp, cameras, style: Object.assign({ checkFramingByAudio: false }, style) });
+  assert.equal(at(off, 45).cameraId, "W", "trusting the picture names: the wide");
 });

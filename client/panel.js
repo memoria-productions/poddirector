@@ -611,10 +611,11 @@
       more.appendChild(slider({ label: "Threshold", min: -75, max: -10, step: 1, unit: "dB",
         help: "Level above which this mic counts as talking. Auto calibrates from the noise floor and speech level." },
         auto ? autoVal : sp.thresholdDb, function (v) { sp.thresholdDb = v; changed(true); },
-        { autoToggle: auto, onAuto: function (on) { sp.thresholdDb = on ? null : Math.round(autoVal); renderSpeakers(); changed(true); } }));
+        { autoToggle: auto, onAuto: function (on) { sp.thresholdDb = on ? null : Math.round(autoVal); renderSpeakers(); changed(true); },
+          reset: function () { sp.thresholdDb = null; renderSpeakers(); changed(true); } }));
       more.appendChild(slider({ label: "Min close-up", min: 0, max: 20, step: 0.5, unit: "s", zero: "global",
         help: "Minimum length for this speaker's close-ups. 0 = use Minimum close-up under Cutting style." },
-        sp.minShotSec || 0, function (v) { sp.minShotSec = v > 0 ? v : null; changed(true); }));
+        sp.minShotSec || 0, function (v) { sp.minShotSec = v > 0 ? v : null; changed(true); }, { reset: 0 }));
       var chips = el("div", { class: "chips" }, [
         chip("Reacts on screen", sp.interjections !== false, function (on) { sp.interjections = on; changed(true); },
           "Their laughs / “yeah”s can trigger a reaction shot of them"),
@@ -769,6 +770,14 @@
       if (opts.autoToggle && opts.onAuto) { opts.autoToggle = false; opts.onAuto(false); return; }
       show(input.value); onchange(+input.value);
     });
+    // opts.reset: double-click puts the slider back to its default (a value, or a function that does the reset).
+    if (opts.reset !== undefined) {
+      wrap.title = (def.help ? def.help + " " : "") + "Double-click the slider to reset it.";
+      input.addEventListener("dblclick", function () {
+        if (typeof opts.reset === "function") { opts.reset(); return; }
+        input.value = opts.reset; show(opts.reset); onchange(+opts.reset);
+      });
+    }
     wrap.appendChild(lab); wrap.appendChild(input); wrap.appendChild(out);
     if (opts.onAuto) {
       out.style.cursor = "pointer"; out.title = "Click to toggle Auto";
@@ -795,7 +804,7 @@
       if (def.type === "select") {
         node = el("div", { class: "ctl", title: def.help || "" }, [el("label", { text: def.label }),
           select(def.options, st[def.key], function (v) { set(v); })]);
-      } else node = slider(def, st[def.key], set);
+      } else node = slider(def, st[def.key], set, { reset: base[def.key] });
       if (isChanged(def.key)) node.classList.add("changed");
       return node;
     }
@@ -835,18 +844,33 @@
    * Minimum wide: nothing the cut can do keeps a shot up that long there. Flag them under Minimum wide and list
    * them on the Cleanup tab.
    */
-  function shortWides() {
+  /** The wide cameras' video tracks (the ones that show content cuts). */
+  function wideTracks() {
     var q = state.seq;
     if (!q) return [];
     var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false && !c.follows; });
     var wides = cams.filter(function (c) { return c.shows.length > 1 && c.shows.length >= spk.length; });
     if (!wides.length && cams.length) wides = [cams.slice().sort(function (a, b) { return a.videoTrack - b.videoTrack; })[0]];
+    return wides.map(function (c) { return q.videoTracks.filter(function (v) { return v.index === c.videoTrack; })[0]; })
+      .filter(function (t) { return t && t.clips; });
+  }
+  /** Content cuts already in the timeline, as zero-length "removals" so the engine changes camera across them. */
+  function timelineJoins() {
+    var seen = {}, out = [];
+    wideTracks().forEach(function (t) {
+      D.contentCuts(t.clips, { fps: state.seq.fps }).forEach(function (s) {
+        if (!seen[s]) { seen[s] = true; out.push({ startSec: s, endSec: s, join: true }); }
+      });
+    });
+    return out;
+  }
+  function shortWides() {
+    var q = state.seq;
+    if (!q) return [];
     var st = effectiveStyle(), min = Math.max(st.minWideSec || 0, st.minShotSec || 0);
     var r = currentRange(), seen = {}, out = [];
-    wides.forEach(function (c) {
-      var t = q.videoTracks.filter(function (v) { return v.index === c.videoTrack; })[0];
-      if (!t || !t.clips) return;
+    wideTracks().forEach(function (t) {
       D.shortSections(t.clips, min, { fps: q.fps, rangeStart: r ? r.a : 0, rangeEnd: r ? r.b : q.durationSec }).forEach(function (s) {
         if (seen[s.startSec]) return;
         seen[s.startSec] = true; s.track = t.name; s.minSec = min; out.push(s);
@@ -934,7 +958,7 @@
     state.config.speakers.forEach(function (sp, i) {
       if (sp.enabled === false) return;
       var def = Object.assign({}, UI.featureControl, { label: sp.name });
-      var node = slider(def, sp.biasDb || 0, function (v) { sp.biasDb = v; node.classList.toggle("changed", v !== 0); changed(true); });
+      var node = slider(def, sp.biasDb || 0, function (v) { sp.biasDb = v; node.classList.toggle("changed", v !== 0); changed(true); }, { reset: 0 });
       node.style.setProperty("--sw", colorOf(i));
       if (sp.biasDb) node.classList.add("changed");
       box.appendChild(node);
@@ -1151,8 +1175,8 @@
     try {
       var planInput = { durationSec: state.seq.durationSec, hopSec: HOP, fps: state.seq.fps, curves: curves, cameraMotion: cameraMotionInput() };
       var rng = currentRange();
-      // Accepted cleanup cuts are passed in so the camera changes across each removed section.
-      var planCfg = Object.assign({}, state.config, { removals: acceptedCuts(), intro: introPlan() });
+      // Accepted cleanup cuts, and content cuts already in the timeline, are passed in so the camera changes across each.
+      var planCfg = Object.assign({}, state.config, { removals: acceptedCuts().concat(timelineJoins()), intro: introPlan() });
       var run = function () { return rng ? D.planRange(planInput, planCfg, rng.a, rng.b) : D.plan(planInput, planCfg); };
       state.result = run();
       // Operated cams: work out who they're pointed at (needs the speech found above), then plan again with it.
@@ -1239,7 +1263,7 @@
     // Why the cuts happen: helps decide which setting to change.
     var WHY = { speaker: "speaker changes", "wide-turn": "turns on the wide", intro: "host's welcome", "intro-wide": "introductions (wide)", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
       hold: "holds", crosstalk: "talking over", cutaway: "monologue cutaways", "camera-move": "dolly moving", framing: "dolly on someone else",
-      opening: "opening", "jump-cover": "cleanup cover", removed: "removed sections", locked: "your locks" };
+      opening: "opening", "jump-cover": "cut cover", removed: "removed sections", locked: "your locks" };
     var reasons = Object.keys(s.reasons || {}).sort(function (a, b) { return s.reasons[b] - s.reasons[a]; });
     if (reasons.length) {
       box.appendChild(el("div", { class: "why small" }, [el("span", { class: "muted", text: "Shots by reason: " }),
@@ -1421,16 +1445,72 @@
   function angleOfCam(c) { return c.angle || (c.videoTrack < NEST_BASE ? c.videoTrack + 1 : (c.videoTrack - NEST_BASE) % 16); }
 
   /** Label the camera 2 shots Rose on a built sequence (when the option is on). ranges: [[a, b]] in sequence time. */
-  function labelCamera2(seqId, track, ranges, reset) {
-    // reset { within: [a, b], color }: on a recut/undo, pieces that are no longer camera 2 get their original label back.
+  function labelColor() { var n = +load("labelColor", ROSE); return n >= 0 && n < 16 ? n : ROSE; }
+  function labelName(n) { return K && K.LABELS ? K.LABELS[n] : "Rose"; }
+  /** The user's Edit > Label > <colour> shortcut, or null. */
+  function labelKeyFor(n) {
+    var k = cutKeys();
+    if (!k || !k.file) return null;
+    try { var key = K.labelKey(K.parseShortcuts(fs.readFileSync(k.file.path, "utf8")), n); return key.usable ? key : null; }
+    catch (e) { return null; }
+  }
+  /**
+   * Label the camera 2 pieces. reset { within: [a, b], color }: on a recut/undo, pieces that are no longer camera 2
+   * get their original label back. With a keystroke sender (a multicam build, Timeline focused) and an Edit > Label
+   * shortcut, PodDirector selects the pieces and presses it, which works where scripts can't set the label.
+   */
+  /** Under the colour picker: the shortcut a multicam build will press, or how to give it one. */
+  function renderLabelKey() {
+    var note = $("labelKeyNote"), name = labelName(labelColor());
+    $("labelColor").disabled = !$("rose2").checked;
+    if (!$("rose2").checked || !hasNode) { note.textContent = ""; return; }
+    var key = labelKeyFor(labelColor());
+    note.textContent = key ? "A multicam build presses " + key.label + " (Edit > Label > " + name + ") on the camera 2 shots."
+      : "Give Edit > Label > " + name + " a shortcut (Edit > Keyboard Shortcuts) so a multicam build can press it; scripts often can't set the colour.";
+  }
+  function labelCamera2(seqId, track, ranges, reset, sender, step) {
     if (!$("rose2").checked || (!ranges.length && !reset)) return Promise.resolve(null);
-    var arg = { sequenceID: seqId, track: track, ranges: ranges, color: ROSE };
-    if (reset && reset.color !== null && reset.color !== undefined) { arg.within = reset.within; arg.otherColor = reset.color; }
+    var color = labelColor(), name = labelName(color), key = sender ? labelKeyFor(color) : null;
+    var hasBase = reset && reset.color !== null && reset.color !== undefined && reset.color !== color;
+    if (key) return labelByKeys(seqId, track, ranges, hasBase ? reset : null, sender, key, step || log);
+    var arg = { sequenceID: seqId, track: track, ranges: ranges, color: color };
+    if (hasBase) { arg.within = reset.within; arg.otherColor = reset.color; }
+    var tip = " Give Edit > Label > " + name + " a shortcut (Edit > Keyboard Shortcuts) and a multicam build will press it instead.";
     return callHostWithin(20000, "colorClips", [JSON.stringify(arg)]).then(function (r) {
-      if (r.unsupported) log("This Premiere doesn't let scripts set clip label colours" + (r.error ? " (" + r.error + ")" : "") + ", so camera 2 shots weren't labelled.");
-      else log("Labelled " + r.colored + " camera 2 shots Rose.");
+      if (r.unsupported) log("This Premiere doesn't let scripts set clip label colours" + (r.error ? " (" + r.error + ")" : "") + ", so camera 2 shots weren't labelled." + tip);
+      else log("Labelled " + r.colored + " camera 2 shots " + name + " by script. If they didn't change colour on the timeline:" + tip);
+      r.name = name;
       return r;
     }, function (e) { log("Couldn't label camera 2 shots: " + e.message); return null; });
+  }
+  function labelByKeys(seqId, track, ranges, reset, sender, key, step) {
+    var name = labelName(labelColor()), colored = 0;
+    function press(sel, k, what) {
+      return callHostWithin(20000, "selectClips", [JSON.stringify(sel)]).then(function (r) {
+        if (r.unsupported) throw new Error("Premiere wouldn't let PodDirector select clips" + (r.error ? " (" + r.error + ")" : ""));
+        if (!r.selected) return 0;
+        return wait(kbdPause()).then(function () { return sender.send(k.usable); }).then(function (reply) {
+          step("label " + what + ": " + r.selected + " pieces, " + k.label + " → " + reply);
+          if (reply !== "OK") throw new Error(reply.indexOf("NOFOCUS") === 0 ? "Premiere stopped being the window in front" : "couldn't type " + k.label);
+          return wait(kbdPause()).then(function () { return r.selected; });
+        });
+      });
+    }
+    var base = { sequenceID: seqId, track: track, ranges: ranges };
+    var work = Promise.resolve();
+    if (reset) {
+      var baseKey = labelKeyFor(reset.color);
+      if (baseKey) work = press(Object.assign({}, base, { within: reset.within, invert: true }), baseKey, labelName(reset.color));
+      else step("no Edit > Label > " + labelName(reset.color) + " shortcut, so pieces that left camera 2 keep their colour");
+    }
+    return work.then(function () { return ranges.length ? press(base, key, name) : 0; }).then(function (n) {
+      colored = n;
+      log("Labelled " + n + " camera 2 shots " + name + " (Edit > Label shortcut " + key.label + ").");
+    }).catch(function (e) {
+      log("Couldn't label camera 2 shots: " + e.message + ".");
+    }).then(function () {
+      return callHostWithin(10000, "selectClips", [JSON.stringify({ sequenceID: seqId, track: track, ranges: [] })]).catch(function () {});
+    }).then(function () { return { colored: colored, unsupported: false, name: name }; });
   }
   /** Camera 2 stretches of the planned cut, and the stacked track that camera is on. */
   function camera2Shots() {
@@ -1440,7 +1520,7 @@
     return { track: cam2.videoTrack, ranges: state.result.shots.filter(function (s) { return cams[s.cameraId] && angleOfCam(cams[s.cameraId]) === 2; })
       .map(function (s) { return [s.startSec, s.endSec]; }) };
   }
-  function roseNote(r) { return r && !r.unsupported && r.colored ? "; " + r.colored + " camera 2 shots labelled Rose" : ""; }
+  function roseNote(r) { return r && !r.unsupported && r.colored ? "; " + r.colored + " camera 2 shots labelled " + (r.name || "Rose") : ""; }
 
   function currentPayload() {
     if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
@@ -1574,7 +1654,7 @@
     UI.cleanupControls.forEach(function (def) {
       box.appendChild(slider(def, state.cleanupOpts[def.key], function (v) {
         state.cleanupOpts[def.key] = v; store("cleanupOpts", state.cleanupOpts); debounce("clean", runCleanup, 150);
-      }));
+      }, { reset: T.DEFAULTS[def.key] }));
     });
   }
 
@@ -1992,7 +2072,11 @@
           return wait(pause);
         }).then(next);
       }
-      return next().then(function () { return { done: done, ms: Date.now() - t0 }; });
+      return next().then(function () {
+        // opts.after(sender): more keystrokes while the Timeline still has focus (the label colour).
+        var ms = Date.now() - t0;
+        return (opts.after ? opts.after(sender) : Promise.resolve(null)).then(function (after) { return { done: done, ms: ms, after: after }; });
+      });
     }).then(function (r) { kbdBanner(null); sender.close(); return r; },
       function (e) { kbdBanner(null); if (sender) sender.close(); e.done = done; throw e; });
   }
@@ -2159,8 +2243,14 @@
       step("angles: " + cams.map(function (c) { return c.name + " = camera " + angleOfCam(c); }).join(", ") + "; keys from " + keys.file.path);
       rec.run = { mode: mode, typed: typed, done: from, track: info.track, startSec: startSec, endSec: endSec, desired: desired, partial: partial };
       saveRecord(seqId, rec);
+      // Camera 2 stretches get the label colour; pieces that aren't camera 2 any more get their original label back.
+      var ranges = [];
+      typed.forEach(function (cut, i) { if (cut.camera === 2) ranges.push([cut.sec, i + 1 < typed.length ? typed[i + 1].sec : endSec]); });
       return typeCuts({ cuts: typed, keys: keys, from: from, label: verb, say: say, step: step,
-        onCut: function (n) { var x = mcRecord(seqId); if (x.run) { x.run.done = n; saveRecord(seqId, x); } } });
+        onCut: function (n) { var x = mcRecord(seqId); if (x.run) { x.run.done = n; saveRecord(seqId, x); } },
+        after: function (sender) {
+          return labelCamera2(info.sequenceID, info.track, ranges, { within: [startSec, endSec], color: rec.baseLabel }, sender, step);
+        } });
     }).then(function (res) {
       // Done: record it (a build joins the history; an undo removes the build it undid).
       rec = mcRecord(seqId); rec.run = null;
@@ -2170,10 +2260,7 @@
       renderMcRow();
       return callHostWithin(10000, "countClips", [JSON.stringify({ track: info.track, startSec: startSec, endSec: endSec })]).then(function (c) {
         var want = typed.length, okAll = c.clips >= want;
-        // Camera 2 stretches, labelled Rose; pieces that aren't camera 2 any more get their original label back.
-        var ranges = [];
-        typed.forEach(function (cut, i) { if (cut.camera === 2) ranges.push([cut.sec, i + 1 < typed.length ? typed[i + 1].sec : endSec]); });
-        return labelCamera2(info.sequenceID, info.track, ranges, { within: [startSec, endSec], color: rec.baseLabel })
+        return Promise.resolve(res.after)
           .then(function (rose) { return mode === "build" ? markWelcome().then(function () { return rose; }) : rose; })
           .then(function (rose) {
             say((mode === "undo" ? "Undid the last multicam cut on “" + info.name + "”" + (rec.history.length ? " (back to the build before it)" : " (back to the wide)")
@@ -2346,8 +2433,12 @@
   $("mcInOut").checked = !!load("mcInOut", false);
   $("mcInOut").onchange = function () { store("mcInOut", this.checked); };
   $("rose2").checked = load("rose2", true) !== false;
-  $("rose2").onchange = function () { store("rose2", this.checked); };
+  $("rose2").onchange = function () { store("rose2", this.checked); renderLabelKey(); };
+  (K && K.LABELS ? K.LABELS : ["Rose"]).forEach(function (n, i) { $("labelColor").appendChild(el("option", { value: String(i), text: n })); });
+  $("labelColor").value = String(labelColor());
+  $("labelColor").onchange = function () { store("labelColor", +this.value); renderLabelKey(); };
   renderKbdKeys();
+  renderLabelKey();
   $("btnIntroMarkers").onclick = markNames;
   $("btnIntroClear").onclick = clearNames;
   $("introCut").onchange = function () { state.config.introCut = this.checked; changed(true); };
@@ -2370,6 +2461,9 @@
 
   init();
   fitHeader();
-  // Quietly look for updates at most twice a day.
-  if (hasNode && Date.now() - (load("updateCheckedAt", 0) || 0) > 12 * 3600 * 1000) setTimeout(function () { checkUpdates(true).catch(function () {}); }, 4000);
+  // Quietly look for updates a few seconds after the panel opens, then every 2 hours while it stays open.
+  if (hasNode) {
+    setTimeout(function () { checkUpdates(true).catch(function () {}); }, 4000);
+    setInterval(function () { if (!pending) checkUpdates(true).catch(function () {}); }, 2 * 3600 * 1000);
+  }
 })();

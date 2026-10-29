@@ -29,6 +29,8 @@ window.PD_UI = {
         help: "What to show when two or more people talk at once." },
       { key: "crosstalkMinSec", label: "Overlap time", min: 0.2, max: 4, step: 0.1, unit: "s",
         help: "Overlap must last this long to count as crosstalk." },
+      { key: "asideSec", label: "Brief aside", min: 0, max: 5, step: 0.5, unit: "s",
+        help: "Someone speaking briefly over a person who carries on afterwards isn't crosstalk unless it lasts this long: the shot stays on the person talking." },
       { key: "wideAfterSilenceSec", label: "Wide on pauses", min: 0, max: 10, step: 0.5, unit: "s", zero: "off",
         help: "Cut to the wide after this much silence. 0 = never." },
       { key: "openOnWideSec", label: "Open on wide", min: 0, max: 15, step: 0.5, unit: "s", zero: "off",
@@ -49,7 +51,9 @@ window.PD_UI = {
       { key: "interjectionMaxSec", label: "Interjection length", min: 0.3, max: 3, step: 0.1, unit: "s",
         help: "Speech bursts shorter than this, over someone else, count as interjections rather than a new turn." },
       { key: "reactionShotSec", label: "Reaction shot", min: 0.6, max: 4, step: 0.1, unit: "s",
-        help: "How long a reaction shot stays up." }
+        help: "How long a reaction shot stays up." },
+      { key: "turnLookaheadSec", label: "Hold before next turn", min: 0, max: 10, step: 0.5, unit: "s", zero: "off",
+        help: "No reaction or cutaway this close before someone else takes over (a question running into its answer): stay on the person talking, that cut is coming." }
     ]},
     { title: "Moving cameras", open: false, onlyIfMoving: true, controls: [
       { key: "steadyMaxPct", label: "Steady below", min: 0.3, max: 4, step: 0.1, unit: "%/s",
@@ -58,6 +62,12 @@ window.PD_UI = {
         help: "Motion over this is a reposition or whip: always cut away from it." },
       { key: "settleSec", label: "Settle time", min: 0, max: 3, step: 0.1, unit: "s",
         help: "The camera must have been steady this long before PodDirector cuts to it." },
+      { key: "guessFraming", label: "Who it's on", type: "select",
+        options: [["true", "Whoever it settled on"], ["false", "Whoever is talking"]],
+        help: "Without a Who's in the shot reading: an operated camera stays on the person it settled on until it moves again, so when someone else starts talking it's the wide until the operator swings round. \"Whoever is talking\" trusts the operator to always be on the speaker." },
+      { key: "checkFramingByAudio", label: "Check names by voice", type: "select",
+        options: [["true", "Yes"], ["false", "Trust the picture"]],
+        help: "The picture reading can lump two people together and name a stretch after the wrong one. With this on, a steady stretch of 8 s or more \"on\" someone who barely speaks, while one other person does most of the talking, counts as on the person talking." },
       { key: "comeBackSec", label: "Come back after", min: 0, max: 10, step: 0.5, unit: "s", zero: "right away",
         help: "After a move, only go back to the moving camera if it then stays steady at least this long. Shorter stretches stay on the wide, so quick banter while the operator swings between people plays on the wide instead of flicking back and forth." },
       { key: "maxWaitSec", label: "Wait to settle", min: 0, max: 4, step: 0.1, unit: "s",
@@ -67,12 +77,12 @@ window.PD_UI = {
         help: "Once on the moving camera, should gentle moves stay on screen?" },
       { key: "movePadSec", label: "Leave move early by", min: 0, max: 1, step: 0.05, unit: "s" }
     ]},
-    { title: "Cleanup cuts", open: false, controls: [
+    { title: "Content cuts", open: false, controls: [
       { key: "changeCameraAtCuts", label: "Across a cut", type: "select",
-        options: [[true, "Switch camera (hide the jump)"], [false, "Leave as is"]],
-        help: "Sections ticked on the Cleanup tab will be removed, joining the shots on either side. Switching camera there hides the jump cut." },
+        options: [["true", "Switch camera (hide the jump)"], ["false", "Leave as is"]],
+        help: "Content cuts already in the timeline, and sections ticked on the Cleanup tab, join the shots on either side. Switching camera there hides the jump: off the wide to the person talking, or off a close-up to the wide." },
       { key: "jumpCoverSec", label: "Cover shot", min: 1, max: 8, step: 0.5, unit: "s",
-        help: "How long the other camera stays up after a removed section before going back (or until the next natural cut)." }
+        help: "How long the other camera stays up after a content cut before going back (or until the next natural cut)." }
     ]},
     { title: "Long monologues", open: false, controls: [
       { key: "maxShotSec", label: "Break shots over", min: 0, max: 60, step: 1, unit: "s", zero: "never",

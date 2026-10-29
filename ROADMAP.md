@@ -90,6 +90,16 @@
 - **Reactions to the wide:** a reaction from someone without a usable close-up cuts to the wide instead of being skipped, and two or more listeners reacting together always cut to the wide.
 - **Undo and Recut fix:** cuts land on exact frames, so they hit the edit points left by earlier builds instead of leaving one-frame slivers. A click while busy now says so.
 
+## v0.16 (added)
+
+- **Label colour by keystroke:** pick any of the 16 label colours for camera 2 shots. A multicam build selects those pieces and presses your Edit > Label shortcut, since scripts often can't set the colour.
+- **Updates:** checks when the panel opens and every 2 hours.
+- **Double-click a slider** to reset it to its default.
+- **Content cuts already in the timeline are covered:** the camera changes exactly on the cut (off the wide to the solo of whoever speaks next, off a solo to the wide), not just for sections ticked on the Cleanup tab.
+- **Stay on the speaker:** a bump on several mics at the same instant is not a reaction; no reaction or cutaway just before the next turn (Hold before next turn).
+- **Dolly stays on the last person until it moves** (when there is no Who's in the shot reading), and a follow-cam shot that runs across a change of speaker is checked against whoever has the floor at each moment.
+- **Picture names checked by voice:** a long steady dolly stretch named after someone silent while another person talks is treated as on the talker. A follow-cam shot spanning several speakers is split per speaker, so monologue cutaways measure one person's turn. A brief aside over someone who carries on isn't crosstalk.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

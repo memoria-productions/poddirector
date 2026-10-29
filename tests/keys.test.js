@@ -28,3 +28,13 @@ test("reads the Cut to Camera shortcuts from a .kys file", () => {
   assert.equal(cams[2].usable, null, "a special key (arrow, F-key) can't be typed by the helper");
   assert.equal(cams[3].usable, null, "camera 4 has no shortcut");
 });
+
+test("finds the Edit > Label shortcut for a colour", () => {
+  const s = K.parseShortcuts(KYS.replace("</context.global>",
+    `<item.127 Version="1"><virtualkey>2147483702</virtualkey><modifier.ctrl>true</modifier.ctrl><modifier.alt>true</modifier.alt><modifier.shift>false</modifier.shift><commandname>cmd.edit.label.6</commandname></item.127>
+    <item.128 Version="1"><commandname>cmd.edit.label.7</commandname></item.128>
+  </context.global>`));
+  assert.equal(K.LABELS[6], "Rose");
+  assert.equal(K.labelKey(s, 6).label, "Ctrl+Alt+6");
+  assert.equal(K.labelKey(s, 7).usable, null, "Mango has no shortcut");
+});

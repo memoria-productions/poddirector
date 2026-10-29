@@ -310,6 +310,24 @@ test("a removed section never joins the same camera to itself (no jump cut)", ()
   assert.notEqual(at(ranged, 25.05).cameraId, at(ranged, 19.9).cameraId, "works with In/Out ranges too");
 });
 
+test("a content cut already in the timeline is covered by another camera when the wide runs across it", () => {
+  // The host has no close-up, so the plan sits on the wide; a content cut at 25 s would be a jump wide to wide.
+  const cams = [{ id: "cW", videoTrack: 0, shows: ["A", "B"] }, { id: "cB", videoTrack: 1, shows: ["B"] }];
+  const input = makeCurves([["A", 1, 60]], { durationSec: 62 });
+  const style = { openOnWideSec: 0, maxShotSec: 0, interjectionMode: "ignore" };
+  const r = D.plan(input, { speakers, cameras: cams, style, removals: [{ startSec: 25, endSec: 25, join: true }] });
+  assert.equal(at(r, 24.9).cameraId, "cW");
+  assert.equal(at(r, 25.05).cameraId, "cB", "the solo covers the cut");
+  assert.equal(at(r, 25.05).reason, "jump-cover");
+  assert.ok(Math.abs(at(r, 25.05).startSec - 25) < 0.05, "starting exactly on the cut");
+  assert.equal(at(r, 40).cameraId, "cW", "then back to the wide");
+  // The times come from the camera track: the source jumps at 25 s (10 s were taken out).
+  const clips = [{ startSec: 0, endSec: 25, inPointSec: 100, mediaPath: "w.mp4", speed: 1 },
+    { startSec: 25, endSec: 40, inPointSec: 135, mediaPath: "w.mp4", speed: 1 },
+    { startSec: 40, endSec: 62, inPointSec: 150, mediaPath: "w.mp4", speed: 1 }];
+  assert.deepEqual(D.contentCuts(clips, { fps: 30 }), [25], "a razor that keeps the source running isn't a cut");
+});
+
 test("max cuts per minute caps a busy edit, dropping reactions and pauses first", () => {
   const lines = [];
   for (let t = 1; t < 170; t += 6) lines.push([t % 12 < 6 ? "A" : "B", t, t + 5.2]);
