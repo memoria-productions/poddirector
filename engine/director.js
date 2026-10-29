@@ -60,6 +60,9 @@
     reactionNoCloseup: "wide", // "wide" | "skip": a reaction from someone without a usable close-up (the dolly is on the speaker)
     groupReactWide: true,      // two or more listeners reacting at once (a laugh round the table) always cut to the wide
     turnLookaheadSec: 4.0,     // no reaction or cutaway this close before the next turn: stay on the speaker, that cut is coming
+    // Handoffs (two-camera shows): wide around the change of speaker, the new speaker's solo once they've settled in
+    soloAfterSec: 0,           // a new speaker gets their solo this long into their turn; until then the wide (0 = straight away)
+    wideLeadSec: 0,            // ...and the wide starts this long before they do, as the last speaker winds down
     // Long monologues
     maxShotSec: 18,            // break a single shot longer than this (0 = never)
     cutawayMode: "mix",        // "wide" | "reaction" | "alternate" | "mix"
@@ -142,6 +145,13 @@
       description: "One person talking: holds the shot, changes angle now and then to keep it moving.",
       style: { reactionDelaySec: 0.6, minShotSec: 3, crosstalkMode: "hold", wideAfterSilenceSec: 0, interjectionMode: "ignore",
                maxShotSec: 20, cutawayMode: "mix", cutawaySec: 4, openOnWideSec: 3 }
+    },
+    handoff: {
+      label: "Wide + dolly handoffs",
+      description: "Learned from 35 finished Classical et cetera edits: the wide around each change of speaker, the new speaker's solo once they've settled in, short turns on the wide, long unhurried shots. For a static wide plus an operated camera.",
+      needs: "wide",
+      style: { soloAfterSec: 5, wideLeadSec: 1.5, crosstalkMinSec: 3, minWideSec: 12, minShotSec: 8,
+               interjectionMode: "reaction", interjectionChance: 0, groupReactWide: true, maxShotSec: 0 }
     },
     social: {
       label: "Social clips",
@@ -1076,7 +1086,40 @@
     return mergeShots(out);
   }
 
-  // --------------------------------------------------- 9c. wide length
+  // --------------------------------------------------- 9c. handoff wide
+
+  /**
+   * How David cuts a two-camera show (measured on 35 finished episodes): as one person hands over, go to the wide a
+   * little before the next one starts (wideLeadSec), stay there while they get going, and cut to their solo only
+   * once they've held the floor for soloAfterSec. A turn too short to leave a solo of at least minShotSec stays on
+   * the wide throughout.
+   */
+  function applyHandoffWide(shots, style, ctx) {
+    var after = Math.round((style.soloAfterSec || 0) * ctx.fr);
+    if (!(after > 0) || !ctx.ci.hasWide) return shots;
+    var wide = ctx.ci.widest, lead = Math.round((style.wideLeadSec || 0) * ctx.fr), minShot = Math.round(style.minShotSec * ctx.fr);
+    var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
+    var out = shots.map(copyShot);
+    for (var i = 1; i < out.length; i++) {
+      var s = out[i], prev = out[i - 1];
+      if (s.locked || s.cameraId === wide || s.reason !== "speaker" || !s.speakers || s.speakers.length !== 1) continue;
+      if (prev.speakers && prev.speakers.length === 1 && prev.speakers[0] === s.speakers[0]) continue; // same turn carrying on
+      var cut = s.start + after;
+      var bridge = { start: s.start, end: s.end - cut < minShot ? s.end : cut, cameraId: wide, reason: "handoff",
+        speakers: s.speakers.slice(), onset: false, locked: false, keepShort: true };
+      if (!canShow(wide, bridge.start, bridge.end)) continue;
+      // Go wide a little early, as the last speaker winds down.
+      if (lead > 0 && !prev.locked && prev.cameraId !== wide && prev.end - prev.start - lead >= minShot) {
+        prev.end -= lead; bridge.start -= lead;
+      }
+      if (bridge.end >= s.end) { s.cameraId = wide; s.reason = "handoff"; s.start = bridge.start; continue; }
+      s.start = bridge.end; s.onset = false;
+      out.splice(i, 0, bridge); i++;
+    }
+    return mergeShots(out);
+  }
+
+  // --------------------------------------------------- 9d. wide length
 
   /** Short wides (forced by a moving camera, quick overlaps, pauses) look like flashes: let each run on to minWideSec. */
   function applyMinWide(shots, style, ctx) {
@@ -1189,8 +1232,17 @@
       cands = cands.concat(ci.list.map(function (c) { return c.cam.id; }));
       var cover = Math.max(minShot, Math.round(style.jumpCoverSec * fr));
       var end = after.end - r.b <= cover + minShot ? after.end : (quietestFrame(ctx, r.b + cover, r.b + minShot, after.end - minShot) || r.b + cover);
-      var cam = null;
-      for (var i = 0; i < cands.length; i++) if (cands[i] && cands[i] !== before.cameraId && canShow(cands[i], r.b, end)) { cam = cands[i]; break; }
+      // A camera that's usable from the cut but starts moving before `end` still covers it: cut the cover short
+      // (at least the shorter of the minimum shot and Cover shot), rather than leave the jump showing.
+      var cam = null, need = Math.min(minShot, Math.round(style.jumpCoverSec * fr));
+      for (var i = 0; i < cands.length && !cam; i++) {
+        var c = cands[i];
+        if (!c || c === before.cameraId) continue;
+        var e = r.b;
+        while (e < end && canShow(c, e, e + 1)) e++;
+        if (e < end) e = Math.max(r.b + need, e - Math.round(style.movePadSec * fr)); // leave before the move starts
+        if (e === end || (e - r.b >= need && canShow(c, r.b, e))) { cam = c; end = e; }
+      }
       if (!cam) return;
       shots = insertShot(shots, { start: r.b, end: end, cameraId: cam, reason: "jump-cover", speakers: (after.speakers || []).slice(), onset: false, locked: true });
     });
@@ -1331,6 +1383,7 @@
     shots = applyTiming(shots, style, ctx);
     shots = applyStability(shots, style, ctx);
     shots = applyFraming(shots, style, ctx);
+    shots = applyHandoffWide(shots, style, ctx);
     shots = applyMinWide(shots, style, ctx);
     shots = enforceMinShot(shots, speakers, style, ctx);
     shots = applyMinWide(shots, style, ctx);
@@ -1690,7 +1743,7 @@
   }
 
   return {
-    VERSION: "0.16.0",
+    VERSION: "0.17.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

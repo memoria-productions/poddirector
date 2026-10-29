@@ -1263,7 +1263,7 @@
     // Why the cuts happen: helps decide which setting to change.
     var WHY = { speaker: "speaker changes", "wide-turn": "turns on the wide", intro: "host's welcome", "intro-wide": "introductions (wide)", reaction: "reactions", "interjection-wide": "reaction wides", pause: "pauses \u2192 wide",
       hold: "holds", crosstalk: "talking over", cutaway: "monologue cutaways", "camera-move": "dolly moving", framing: "dolly on someone else",
-      opening: "opening", "jump-cover": "cut cover", removed: "removed sections", locked: "your locks" };
+      opening: "opening", "jump-cover": "cut cover", handoff: "handoff wides", removed: "removed sections", locked: "your locks" };
     var reasons = Object.keys(s.reasons || {}).sort(function (a, b) { return s.reasons[b] - s.reasons[a]; });
     if (reasons.length) {
       box.appendChild(el("div", { class: "why small" }, [el("span", { class: "muted", text: "Shots by reason: " }),
@@ -1612,6 +1612,8 @@
       exportedAt: new Date().toISOString(), engineVersion: D.VERSION,
       sequence: { name: state.seq.name, fps: state.seq.fps, durationSec: state.seq.durationSec },
       range: currentRange() ? { startSec: currentRange().a, endSec: currentRange().b } : undefined,
+      // Content cuts found in the timeline (each becomes a zero-length removal the plan covers).
+      contentCuts: timelineJoins().map(function (j) { return j.startSec; }),
       input: { durationSec: state.seq.durationSec, hopSec: HOP * down, fps: state.seq.fps, curves: curves,
         framing: framingInput(state.result),
         cameraMotion: (function () {

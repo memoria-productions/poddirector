@@ -21,7 +21,11 @@ window.PD_UI = {
       { key: "reactionDelaySec", label: "Reaction delay", min: 0, max: 2, step: 0.05, unit: "s",
         help: "How long a new voice must keep talking before the camera switches. Higher = calmer, fewer false switches." },
       { key: "cutTimingSec", label: "Cut timing", min: -0.6, max: 0.6, step: 0.02, unit: "s",
-        help: "Where the cut lands relative to the first word. Negative = cut just before they speak (anticipate), positive = a beat after (react)." }
+        help: "Where the cut lands relative to the first word. Negative = cut just before they speak (anticipate), positive = a beat after (react)." },
+      { key: "soloAfterSec", label: "Solo after", min: 0, max: 10, step: 0.5, unit: "s", zero: "straight away",
+        help: "On a change of speaker, stay on the wide and cut to the new speaker's close-up only once they've talked this long. Turns too short for that stay on the wide. Your own edits average about 5 s." },
+      { key: "wideLeadSec", label: "Wide before handoff", min: 0, max: 3, step: 0.25, unit: "s", zero: "off",
+        help: "With Solo after on: go to the wide this long before the next person starts, as the last speaker winds down." }
     ]},
     { title: "Wide & group shots", open: false, controls: [
       { key: "crosstalkMode", label: "Talking over", type: "select",

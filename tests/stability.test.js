@@ -179,3 +179,19 @@ test("follow cam without a framing reading: still on the last person until the o
   const off = D.plan(input, { speakers, cameras, style: Object.assign({ guessFraming: false }, base) });
   assert.equal(at(off, 33).cameraId, "F", "the old behaviour: the dolly counts as a close-up of whoever talks");
 });
+
+test("a content cut is covered by the dolly even when the operator moves it a few seconds later", () => {
+  // The host talks on the wide (the dolly sits on the guest, listening). Content cut at 20 s; the dolly is steady
+  // until 26 s, then moves. The cover is cut short before the move instead of dropped (the jump would show).
+  const input = makeCurves([["A", 1, 40]], { durationSec: 42 });
+  input.cameraMotion = { F: motion(42, [[0, 0.5, 20], [26, 28, 20], [35, 35.5, 20]]) };
+  input.framing = { F: [{ startSec: 0.5, endSec: 26, speakerId: "B" }, { startSec: 28, endSec: 42, speakerId: "B" }] };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const style = Object.assign({}, base, { jumpCoverSec: 8, minShotSec: 4, checkFramingByAudio: false });
+  const r = D.plan(input, { speakers, cameras, style, removals: [{ startSec: 20, endSec: 20, join: true }] });
+  assert.equal(at(r, 19.9).cameraId, "W");
+  const cover = at(r, 20.1);
+  assert.equal(cover.cameraId, "F", "the listener's solo covers the cut");
+  assert.equal(cover.reason, "jump-cover");
+  assert.ok(cover.endSec <= 26 && cover.endSec >= 24, "and leaves the dolly just before it moves (" + cover.endSec + ")");
+});

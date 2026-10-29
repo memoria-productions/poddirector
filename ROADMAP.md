@@ -100,6 +100,17 @@
 - **Dolly stays on the last person until it moves** (when there is no Who's in the shot reading), and a follow-cam shot that runs across a change of speaker is checked against whoever has the floor at each moment.
 - **Picture names checked by voice:** a long steady dolly stretch named after someone silent while another person talks is treated as on the talker. A follow-cam shot spanning several speakers is split per speaker, so monologue cutaways measure one person's turn. A brief aside over someone who carries on isn't crosstalk.
 
+## v0.17 (added)
+
+- **Wide + dolly handoffs** mode, learned by lining up 35 finished Classical et cetera edits (tools/prproj.js) with the mic audio. Wide around each change of speaker (from 1.5 s before), the new speaker's solo 5 s in, short turns on the wide, long shots. On audio-only replays it matches David's camera choice 78% of the time (Roundtable: 47%). New settings: Solo after, Wide before handoff.
+- Next: dolly motion for past episodes, so the tuning also sees the operator's moves.
+
+## v0.16.1 (added)
+
+- A content cut is covered even when the covering camera moves a few seconds later: the cover is cut short before the move (it used to be dropped, leaving the jump).
+- The analysis export lists the content cuts found in the timeline.
+- **tools/prproj.js:** reads finished edits straight from Premiere project files (no Premiere): every sequence, track and piece, label colours, sources, and the camera angle of each multicam piece. Run over a folder of episodes to learn from past edits. The wide is the angle shot on the 24-70 (Sony sidecar lens); --aperture settles ties by f-number (exiftool, cached).
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

@@ -355,3 +355,17 @@ test("wide shots last at least the minimum wide length", () => {
   assert.ok(shortWides(off) > 0, "fixture has short wides");
   assert.strictEqual(shortWides(on), 0, "no wide under 5 s");
 });
+
+test("handoff wide: the wide around a change of speaker, the solo once they've settled in, short turns stay wide", () => {
+  // A talks to 30 s; B answers briefly (30.5-36); A again 36.5-80. Static wide plus an operated camera.
+  const input = makeCurves([["A", 1, 30], ["B", 30.5, 36], ["A", 36.5, 80]], { durationSec: 82 });
+  const cams = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true }];
+  const r = D.plan(input, { speakers, cameras: cams, preset: "handoff", style: { openOnWideSec: 0 } });
+  assert.equal(at(r, 20).cameraId, "F", "A's long turn: the solo");
+  assert.equal(at(r, 29.2).cameraId, "W", "the wide starts as A winds down, before B comes in");
+  assert.equal(at(r, 33).cameraId, "W", "B's short answer stays on the wide");
+  assert.equal(at(r, 39).cameraId, "W", "A's next turn starts on the wide...");
+  assert.equal(at(r, 50).cameraId, "F", "...and gets the solo once A has settled in");
+  const off = D.plan(input, { speakers, cameras: cams, preset: "handoff", style: { openOnWideSec: 0, soloAfterSec: 0, wideLeadSec: 0 } });
+  assert.equal(at(off, 39).cameraId, "F", "soloAfterSec 0: straight to the solo");
+});

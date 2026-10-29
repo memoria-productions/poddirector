@@ -82,6 +82,7 @@ Pick the mode closest to the show; it sets every setting at once. The line under
 | **Stay on the speaker** | Only cuts when the speaker changes: no wides on pauses, no cutaways, no reactions. |
 | **Three people / Roundtable (4+)** | Tuned for bigger tables; Roundtable uses more wides. |
 | **Solo / monologue** | One person talking. |
+| **Wide + dolly handoffs** | Learned from 35 finished Classical et cetera edits, for a static wide plus an operated camera. The wide covers each change of speaker, starting 1.5 s before the next person comes in. The new speaker gets their solo 5 s into their turn, and short turns stay on the wide. Shots are long (8 s minimum, wides 12 s), with no monologue cutaways, and only group reactions cut away. |
 | **Social clips** | Very fast cutting for shorts. |
 
 ### The main sliders
@@ -102,6 +103,8 @@ Pick the mode closest to the show; it sets every setting at once. The line under
 
 - **Reaction delay:** how long a new voice has to keep talking before the camera follows. Raise it if the edit feels jumpy. Lower it if the camera is late to the new speaker.
 - **Cut timing:** where the cut lands relative to the first word. Slightly negative (−0.1 s) cuts just before they speak, which feels natural. Positive values cut a beat after, like a live switcher reacting.
+- **Solo after:** on a change of speaker, stay on the wide and cut to the new speaker's close-up only once they've talked this long. Turns too short for that stay on the wide. In your finished edits it's about 5 s (0 = straight to the close-up).
+- **Wide before handoff:** with Solo after on, go to the wide this long before the next person starts, as the last speaker winds down.
 
 ### Wide and group shots
 
@@ -113,7 +116,7 @@ Pick the mode closest to the show; it sets every setting at once. The line under
 
 ### Content cuts
 
-When you've taken a section out of the episode, the source jumps at that point. Shown on the same camera, that's a jump cut. PodDirector finds these content cuts on the wide's track and changes camera exactly on the cut. Off the wide, it goes to the solo of whoever speaks right after the cut, or a listener if they have none. Off a solo, it goes to the wide. After **Cover shot** seconds it goes back, or carries on to the next natural cut. These show as "cut cover" in the stats. **Across a cut** turns this off. Sections you tick on the Cleanup tab get the same treatment.
+When you've taken a section out of the episode, the source jumps at that point. Shown on the same camera, that's a jump cut. PodDirector finds these content cuts on the wide's track and changes camera exactly on the cut. Off the wide, it goes to the solo of whoever speaks right after the cut, or a listener if they have none. Off a solo, it goes to the wide. After **Cover shot** seconds it goes back, or carries on to the next natural cut. If the camera it covers with starts moving sooner, the cover ends just before the move instead of being skipped. These show as "cut cover" in the stats. **Across a cut** turns this off. Sections you tick on the Cleanup tab get the same treatment.
 
 ### Reactions and interjections
 
