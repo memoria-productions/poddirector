@@ -127,6 +127,9 @@ This group appears once **Check for movement** is on for a camera. PodDirector m
 - **Wait to settle:** if a cut would land mid-move, PodDirector holds the previous shot up to this long. Longer moves go to the wide until the camera settles.
 - **Slow moves on air:** keep gentle push-ins on screen once you're on that camera, or cut away from any movement. It's off by default, so any visible reframing or drift cuts to the wide.
 - **Leave move early by:** how early to cut away before a big move starts.
+- **Come back after** (3 s by default): after a move, PodDirector goes back to the moving camera only if it then stays steady at least this long. During quick banter, the operator keeps swinging between people, so the cut stays on the wide instead of flicking dolly–wide–dolly. Set it to 0 to go back as soon as the camera settles.
+
+The wide is the safety shot. Cutting *to* it never waits for anything: not settle time, not reaction delay, and not a late cut timing. When the dolly starts moving, the cut goes to the wide just before the move. A reaction (a laugh, a "yeah") on the dolly is only used when the dolly is steady for the whole reaction; otherwise it plays on the wide.
 
 Typical setup, one static wide plus one operated dolly camera: turn on **Check for movement** and **Follows speaker** for the dolly, and leave both off for the wide. The edit then reads: dolly on whoever is talking when it's steady, the wide while the operator re-frames, back to the dolly once it settles.
 
@@ -207,7 +210,7 @@ When the transcript has the welcome ("Hello and welcome to … Classical et cete
 - **The welcome** and who's hosting. The host is whoever says "I'm Jessica Abood" or "my name is …".
 - **Everyone they introduce,** in order, with the time each name is said. People are matched by the speaker names on the Multicam tab, so name your speakers. Guests are picked up from phrases like "we're joined by Dr. Malcolm Guite" or "our guest today is …".
 
-With **Open on the host's solo cam, then the wide for the introductions** ticked (the default), the multicam cut opens on the host's close-up, or the follow cam when it's on them and steady, through the welcome. It goes to the wide at the first other name and holds the wide past the last one, for at least Minimum wide. Normal cutting picks up after that. Any shots you've locked in the preview still win.
+With **Open on the host's solo cam, then the wide for the introductions** ticked (the default), the multicam cut opens on the host's close-up, or the follow cam when it's on them and steady, through the welcome. It goes to the wide at the first other name and holds it for at least **Hold the wide at least** seconds (15 by default), so the name cards have time on screen. If the introductions run longer, the wide holds past the last name. Normal cutting picks up after that. Any shots you've locked in the preview still win. Every build (multicam or stacked) also puts a green **Welcome** marker where the host says it.
 
 Each name has a text box for its name tag: type the full name or title, and it's remembered for next time. **Add lower-third markers** drops a yellow 5-second marker at each name, labelled with that text, so you can drop your name tag graphics on them. **Clear name markers** removes them. Name times are estimates when the transcript only has a timecode every 20 seconds or so, as Premiere's text export does. Whisper transcripts carry word timings and land closer.
 
@@ -237,6 +240,8 @@ Once the trial works, **Build as multicam** applies the whole planned cut to a r
 5. Afterwards it counts the pieces on the multicam track and tells you whether every cut landed. If it stopped part-way, or some cuts were missed, **Resume** carries on from where it stopped. Raise **Pause** under Settings first if cuts were being missed.
 
 Each keypress is one undo step in Premiere. Run it on the duplicate, so your stacked-track sequence stays as it was.
+
+**Recut multicam and Undo multicam cut.** Once a sequence has been built, the button reads **Recut multicam**. Change settings, look at the preview, and click it to apply the new plan to the same multicam clip. Cut to Camera only switches up to the next edit point, so a recut also retypes every piece left by earlier builds. Old edit points become invisible through-edits on the same angle. **Undo multicam cut** puts the previous build back the same way. After a first build, it puts every piece back on camera 1, the wide, which is how the nest started. The last 5 builds of each sequence are kept. Both overwrite angles you changed by hand on that stretch, so make hand changes last. The Rose labels follow: pieces that are no longer camera 2 get their original label colour back.
 
 **Analyzing a sequence whose cameras are already nested.** When a video track holds a multicam (or nested) sequence, **Scan** reads inside it. Each of the nest's video tracks becomes an angle: V1 inside is angle 1, V2 is angle 2, and so on, each mapped onto this sequence's timeline. They show up in the camera track menu as *V1 nest angle 1 (Wide)*, *V1 nest angle 2 (Dolly)*, and are analyzed like stacked cameras. So the dolly is still checked for movement and "who's in the shot", and the cut never lands on it mid-move. If your saved setup still points at the old stacked tracks, the Cameras card says so: click **Use the nest's angles as cameras** (your camera settings are kept), then Analyze again. Build as multicam works straight on that sequence. Build cut on a copy and Recut only work with stacked camera tracks.
 

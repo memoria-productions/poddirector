@@ -216,6 +216,17 @@ test("multicam cut list for an In/Out range: opens on the planned angle, nothing
   assert.deepEqual(D.toMulticamCuts(result, cams, { startSec: 20, endSec: 31 }).map((c) => [c.sec, c.camera]), [[20, 1], [30, 2]]);
 });
 
+test("multicam recut: every existing piece and every new cut gets the angle the plan wants there", () => {
+  // An earlier build left edit points at 10, 20, 30; the new plan cuts at 15 (to 2) and 25 (back to 1).
+  const desired = [{ sec: 0, camera: 1 }, { sec: 15, camera: 2 }, { sec: 25, camera: 1 }];
+  const typed = D.multicamRetype(desired, [0, 10, 20, 30], 0, 40);
+  assert.deepEqual(typed.map((c) => [c.sec, c.camera]), [[0, 1], [10, 1], [15, 2], [20, 2], [25, 1], [30, 1]]);
+  // Undo to the wide after a first build: every piece back on camera 1.
+  assert.deepEqual(D.multicamRetype([{ sec: 5, camera: 1 }], [5, 12, 18], 5, 40).map((c) => [c.sec, c.camera]), [[5, 1], [12, 1], [18, 1]]);
+  // Edit points outside the range are left alone; ones within half a frame of a cut count once.
+  assert.deepEqual(D.multicamRetype(desired, [2, 15.01, 45], 5, 40).map((c) => c.sec), [5, 15, 25]);
+});
+
 test("manual locks override the automatic choice", () => {
   const r = D.plan(conversation(), { speakers, cameras, overrides: [{ startSec: 15, endSec: 20, cameraId: "cW" }] });
   assert.equal(at(r, 17).cameraId, "cW");

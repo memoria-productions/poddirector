@@ -445,12 +445,15 @@ var PD = (function () {
     var vt = seq.videoTracks[p.track], n = 0;
     if (!vt) return fail("Video track V" + (p.track + 1) + " not found.");
     var r = p.ranges.slice().sort(function (a, b) { return a[0] - b[0]; });
+    // otherColor (optional): pieces inside [within[0], within[1]) but not in a range go back to this label.
+    var hasOther = p.otherColor !== undefined && p.otherColor !== null && p.within;
     for (var c = 0; c < vt.clips.numItems; c++) {
       var clip = vt.clips[c], mid = (sec(clip.start) + sec(clip.end)) / 2, hit = false;
       for (var k = 0; k < r.length && r[k][0] <= mid; k++) if (mid < r[k][1]) { hit = true; break; }
-      if (!hit) continue;
+      var want = hit ? p.color : (hasOther && mid >= p.within[0] && mid < p.within[1] ? p.otherColor : null);
+      if (want === null) continue;
       if (typeof clip.setColorLabel !== "function") return ok({ colored: n, unsupported: true });
-      try { clip.setColorLabel(p.color); n++; } catch (e) { return ok({ colored: n, unsupported: true, error: String(e) }); }
+      try { clip.setColorLabel(want); if (hit) n++; } catch (e) { return ok({ colored: n, unsupported: true, error: String(e) }); }
     }
     return ok({ colored: n, unsupported: false });
   }
@@ -459,13 +462,16 @@ var PD = (function () {
   function countClips(json) {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
-    var p = JSON.parse(json), vt = seq.videoTracks[p.track], n = 0;
+    var p = JSON.parse(json), vt = seq.videoTracks[p.track], n = 0, starts = [], label = null;
     if (!vt) return fail("Video track V" + (p.track + 1) + " not found.");
     for (var c = 0; c < vt.clips.numItems; c++) {
       var a = sec(vt.clips[c].start), b = sec(vt.clips[c].end);
-      if (b > p.startSec + 0.02 && a < p.endSec - 0.02) n++;
+      if (b > p.startSec + 0.02 && a < p.endSec - 0.02) {
+        n++; starts.push(a); // starts: the existing edit points (for a recut)
+        if (label === null) { try { if (typeof vt.clips[c].getColorLabel === "function") label = vt.clips[c].getColorLabel(); } catch (e) { label = null; } }
+      }
     }
-    return ok({ clips: n });
+    return ok({ clips: n, starts: starts, firstLabel: label });
   }
 
   /** json: { sequenceID, tracks: [index] } — turn track output (the eye) on for these video tracks. */

@@ -61,3 +61,15 @@ test("intro cut: host's solo cam through the welcome, then the wide for the intr
   const locked = D.plan(input, { speakers, cameras, intro: { startSec: 2, wideSec: 8, endSec: 12 }, overrides: [{ startSec: 9, endSec: 11, cameraId: "cB" }] });
   assert.equal(at(locked, 10).cameraId, "cB");
 });
+
+test("intro wide holds at least 15 s for the name cards (adjustable)", () => {
+  const speakers = [{ id: "A", name: "Host" }, { id: "B", name: "Guest" }];
+  const cameras = [{ id: "cW", videoTrack: 0, shows: ["A", "B"] }, { id: "cA", videoTrack: 1, shows: ["A"] }, { id: "cB", videoTrack: 2, shows: ["B"] }];
+  const input = makeCurves([["A", 2, 20], ["B", 20.5, 50]], { durationSec: 52 });
+  const wideRun = (r) => { const s = r.shots.find((x) => x.reason === "intro-wide"); return [s.startSec, s.endSec]; };
+  // Names said quickly (8-12 s): the wide still runs to 8 + 15 = 23 s.
+  assert.deepEqual(wideRun(D.plan(input, { speakers, cameras, intro: { startSec: 2, wideSec: 8, endSec: 12 } })), [8, 23]);
+  assert.deepEqual(wideRun(D.plan(input, { speakers, cameras, intro: { startSec: 2, wideSec: 8, endSec: 12, holdSec: 6 } })), [8, 14]);
+  // A long round of introductions keeps the wide past the hold.
+  assert.deepEqual(wideRun(D.plan(input, { speakers, cameras, intro: { startSec: 2, wideSec: 8, endSec: 30 } })), [8, 30]);
+});

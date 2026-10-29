@@ -68,6 +68,7 @@
     fastMinPct: 6,             // above this = a real move/reposition; never on air
     settleSec: 0.6,            // camera must have been steady this long before we cut to it
     maxWaitSec: 1.5,           // hold the previous shot up to this long waiting for the camera to settle
+    comeBackSec: 3.0,          // after a move, only go back to the moving camera if it then stays usable this long (banter: stay wide)
     slowMovesOnAir: false,     // once on the shot, may gentle moves (push-ins, drifts) stay on air? off: operator reframes look sloppy
     movePadSec: 0.2,           // leave a move this early / come back this late
     // Cleanup cuts (sections that will be removed)
@@ -714,6 +715,8 @@
       for (var i = 1; i < shots.length; i++) {
         var s = shots[i];
         if (!s.onset || s.locked || shots[i - 1].locked) continue;
+        // The wide is the safety shot: a cut to it can come early (anticipate) but is never made to wait.
+        if (off > 0 && s.cameraId === ctx.ci.widest) continue;
         var prev = shots[i - 1];
         var nb = clamp(s.start + off, prev.start + 1, s.end - 1);
         prev.end = nb; s.start = nb;
@@ -849,6 +852,20 @@
         if (want !== on) { pieces.push({ a: from, b: f, on: on }); from = f; on = want; }
       }
       pieces.push({ a: from, b: s.end, on: on });
+      // The wide is the safety. Next to a move, a stretch on the moving camera shorter than comeBackSec isn't
+      // worth going back for (quick banter while the operator swings between people): stay on the wide.
+      var comeBack = Math.round((style.comeBackSec || 0) * ctx.fr);
+      if (comeBack > 0 && pieces.length > 1) {
+        var was = pieces.map(function (p) { return p.on; });
+        pieces.forEach(function (p, i) {
+          var nextToMove = (i > 0 && !was[i - 1]) || (i < pieces.length - 1 && !was[i + 1]);
+          if (p.on && nextToMove && p.b - p.a < comeBack) p.on = false;
+        });
+      }
+      // A reaction (a listener's laugh, a "yeah") on an operated camera that isn't steady throughout: use the wide.
+      if (s.reason === "reaction" && ctx.ci.isFollow(cam) && pieces.some(function (p) { return !p.on; })) {
+        pieces = [{ a: start, b: s.end, on: false }];
+      }
       pieces.forEach(function (p, i) {
         if (p.b <= p.a) return;
         var piece = copyShot(s);
@@ -1097,15 +1114,17 @@
 
   /**
    * The show's opening, from the transcript: the host's solo cam through the welcome, then the wide while they
-   * introduce everyone (where the lower-third name tags go). intro: { startSec, wideSec, endSec, hostId? }.
-   * The host is hostId, or whoever talks most during the welcome. A solo shot the camera can't give (a follow cam
-   * mid-move or on someone else) is left to the normal cut; manual locks still win.
+   * introduce everyone (where the lower-third name tags go). intro: { startSec, wideSec, endSec, hostId?, holdSec? }.
+   * The wide holds at least holdSec (default 15 s) so the name cards have time on screen. The host is hostId, or
+   * whoever talks most during the welcome. A solo shot the camera can't give (a follow cam mid-move or on someone
+   * else) is left to the normal cut; manual locks still win.
    */
   function applyIntro(shots, intro, speakers, style, ctx) {
     if (!intro || !(intro.endSec > intro.startSec)) return shots;
     var fr = ctx.fr, ci = ctx.ci;
+    var hold = intro.holdSec === undefined || intro.holdSec === null ? 15 : Number(intro.holdSec);
     var a = Math.max(0, Math.round(intro.startSec * fr)), w = Math.round(Math.max(intro.startSec, intro.wideSec) * fr);
-    var b = Math.min(ctx.frames, Math.max(Math.round(intro.endSec * fr), w + Math.round((style.minWideSec || 0) * fr)));
+    var b = Math.min(ctx.frames, Math.max(Math.round(intro.endSec * fr), w + Math.round(Math.max(hold, style.minWideSec || 0) * fr)));
     if (a >= ctx.frames || b <= a) return shots;
     var canShow = ctx.stable ? ctx.stable.canShow : function () { return true; };
     var si = -1;
@@ -1405,6 +1424,33 @@
   }
 
   /**
+   * What to type on a multicam track so every piece in [startSec, endSec) ends up on the angle `desired` asks
+   * for, even where an earlier build left edit points (a recut, or undoing one). Cut to Camera only switches up
+   * to the next edit point, so each existing piece start gets the angle wanted there, as well as every new cut.
+   * desired: [{ sec, camera }] (sorted; the angle holds until the next one). starts: piece starts on the track.
+   * -> [{ sec, camera }] sorted, one per boundary (within half a frame merged).
+   */
+  function multicamRetype(desired, starts, startSec, endSec) {
+    var want = desired.slice().sort(function (a, b) { return a.sec - b.sec; });
+    if (!want.length) return [];
+    function angleAt(t) {
+      var cam = want[0].camera;
+      for (var i = 0; i < want.length && want[i].sec <= t + 1e-3; i++) cam = want[i].camera;
+      return cam;
+    }
+    var points = [startSec];
+    want.forEach(function (c) { if (c.sec >= startSec - 1e-3 && c.sec < endSec - 1e-3) points.push(c.sec); });
+    (starts || []).forEach(function (s) { if (s > startSec + 1e-3 && s < endSec - 1e-3) points.push(s); });
+    points.sort(function (a, b) { return a - b; });
+    var out = [];
+    points.forEach(function (t) {
+      if (out.length && t - out[out.length - 1].sec < 0.02) return;
+      out.push({ sec: round3(t), camera: angleAt(t) });
+    });
+    return out;
+  }
+
+  /**
    * The cut as multicam angle changes, for "Build as multicam": one { sec, camera, cameraId } per shot where the
    * angle changes. A camera's angle is its video track + 1 (nesting V1, V2 keeps that order) unless it has its own
    * `angle`. The first shot is included so the cut starts on the right angle (first: true); everything before it
@@ -1496,7 +1542,7 @@
   }
 
   return {
-    VERSION: "0.12.0",
+    VERSION: "0.14.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
@@ -1507,6 +1553,7 @@
     planRange: planRange,
     toEditPayload: toEditPayload,
     toMulticamCuts: toMulticamCuts,
+    multicamRetype: multicamRetype,
     cameraMoves: cameraMoves,
     _internal: { smoothRuns: smoothRuns, calibrate: calibrate, percentile: percentile, shotAt: shotAt }
   };

@@ -76,6 +76,15 @@
 - **No more silent "steady":** a moving camera with no footage to measure is flagged (red warning, builds refuse) instead of being treated as steady; a sequence whose cameras moved into a nest switches to the nest's angles at Scan.
 - **Mark camera moves:** timeline markers over every detected move (red big, orange slow).
 
+## v0.13 (added)
+
+- **The wide is the safety:** after a move, back to the dolly only if it then stays steady (Come back after, 3 s); banter stays wide; reactions on the dolly only when it's steady throughout; cuts to the wide never wait (late cut timing doesn't apply to them).
+- **Intro:** the wide holds at least 15 s for the name cards (adjustable); every build marks the welcome.
+
+## v0.14 (added)
+
+- **Recut multicam / Undo multicam cut:** every build retypes all pieces in its range (so leftover edit points can't keep stale angles); the last 5 builds per sequence are kept, and Undo re-applies the previous one (or the wide everywhere after a first build). Rose labels follow.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

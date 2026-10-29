@@ -1,6 +1,6 @@
 {
   "name": "poddirector",
-  "version": "0.12.0",
+  "version": "0.14.0",
   "description": "AutoPod-style multicam podcast editor and transcript cleanup for Adobe Premiere Pro (offline, self-contained).",
   "license": "MIT",
   "private": true,

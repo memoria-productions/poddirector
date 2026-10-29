@@ -7,7 +7,7 @@
   var hasNode = typeof require === "function" && typeof process !== "undefined";
   var D = window.PodDirector, T = window.PodTranscript, A = window.PodAnalyzer, W = window.PodTranscriber, UI = window.PD_UI;
   var fs = hasNode ? require("fs") : null, path = hasNode ? require("path") : null, os = hasNode ? require("os") : null;
-  var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ", MARK_NAME = "[PD name] ", MARK_MOVE = "[PD move] ";
+  var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ", MARK_NAME = "[PD name] ", MARK_MOVE = "[PD move] ", MARK_INTRO = "[PD intro] ";
   var HOP = 0.025;
 
   var state = {
@@ -552,7 +552,7 @@
 
   // ------------------------------------------------------------ render
   function renderAll() {
-    renderSetupSelect(); renderRangeSelect(); renderSpeakers(); renderCameras(); renderPresetSelect(); renderStyle(); renderLocks(); setButtons();
+    renderSetupSelect(); renderRangeSelect(); renderSpeakers(); renderCameras(); renderPresetSelect(); renderStyle(); renderLocks(); setButtons(); renderMcRow();
   }
 
   function colorOf(i) { return UI.colors[i % UI.colors.length]; }
@@ -1322,6 +1322,7 @@
   var clearCamMarkers = guard(function () {
     var n = 0;
     return callHost("clearMarkers", [MARK_CAM]).then(function (r) { n += r.removed; return callHost("clearMarkers", [MARK_MOVE]); })
+      .then(function (r) { n += r.removed; return callHost("clearMarkers", [MARK_INTRO]); })
       .then(function (r) { n += r.removed; status("Removed " + n + " PodDirector markers.", "ok"); });
   });
 
@@ -1420,9 +1421,12 @@
   function angleOfCam(c) { return c.angle || (c.videoTrack < NEST_BASE ? c.videoTrack + 1 : (c.videoTrack - NEST_BASE) % 16); }
 
   /** Label the camera 2 shots Rose on a built sequence (when the option is on). ranges: [[a, b]] in sequence time. */
-  function labelCamera2(seqId, track, ranges) {
-    if (!$("rose2").checked || !ranges.length) return Promise.resolve(null);
-    return callHostWithin(20000, "colorClips", [JSON.stringify({ sequenceID: seqId, track: track, ranges: ranges, color: ROSE })]).then(function (r) {
+  function labelCamera2(seqId, track, ranges, reset) {
+    // reset { within: [a, b], color }: on a recut/undo, pieces that are no longer camera 2 get their original label back.
+    if (!$("rose2").checked || (!ranges.length && !reset)) return Promise.resolve(null);
+    var arg = { sequenceID: seqId, track: track, ranges: ranges, color: ROSE };
+    if (reset && reset.color !== null && reset.color !== undefined) { arg.within = reset.within; arg.otherColor = reset.color; }
+    return callHostWithin(20000, "colorClips", [JSON.stringify(arg)]).then(function (r) {
       if (r.unsupported) log("This Premiere doesn't let scripts set clip label colours" + (r.error ? " (" + r.error + ")" : "") + ", so camera 2 shots weren't labelled.");
       else log("Labelled " + r.colored + " camera 2 shots Rose.");
       return r;
@@ -1454,7 +1458,7 @@
       return writeCut(newSeq.sequenceID, payload, "Cutting");
     }).then(function (r) {
       var c2 = camera2Shots();
-      return (c2 ? labelCamera2(newSeq.sequenceID, c2.track, c2.ranges) : Promise.resolve(null)).then(function (rose) {
+      return (c2 ? labelCamera2(newSeq.sequenceID, c2.track, c2.ranges) : Promise.resolve(null)).then(function (rose) { return markWelcome().then(function () { return rose; }); }).then(function (rose) {
         rememberCut(orig, newSeq, payload, state.result.stats, true);
         renderRecut();
         status("Done: \u201C" + newSeq.name + "\u201D has " + state.result.stats.cuts + " cuts (" + r.toggled + " clips switched" + shownNote(r) + roseNote(rose) + "). Your original is untouched.", "ok", 1);
@@ -1474,7 +1478,7 @@
     return callHost("openSequenceById", [rec.id]).then(function (r) {
       return writeCut(rec.id, payload, "Recutting").then(function (res) {
         var c2 = camera2Shots();
-        return (c2 ? labelCamera2(rec.id, c2.track, c2.ranges) : Promise.resolve(null)).then(function (rose) {
+        return (c2 ? labelCamera2(rec.id, c2.track, c2.ranges) : Promise.resolve(null)).then(function (rose) { return markWelcome().then(function () { return rose; }); }).then(function (rose) {
           rememberCut(orig, { sequenceID: rec.id, name: r.name }, payload, state.result.stats, false);
           renderRecut();
           status("Recut \u201C" + r.name + "\u201D: " + state.result.stats.cuts + " cuts (" + res.toggled + " clips switched" + shownNote(res) + roseNote(rose) + "). Undo recut puts the previous version back.", "ok", 1);
@@ -1622,7 +1626,8 @@
     $("introWhen").textContent = "welcome at " + fmt(it.welcomeSec) + (it.host ? " · " + it.host.name + " hosting" : "");
     $("introCut").checked = state.config.introCut !== false;
     $("introNote").textContent = "“" + it.welcomeText.slice(0, 90) + "” — solo cam until " + fmt(it.wideSec) +
-      ", then the wide until " + fmt(it.endSec) + ". Times come from the transcript; check them before dropping name tags.";
+      ", then the wide until " + fmt(Math.max(it.endSec, it.wideSec + introHold())) + ". Times come from the transcript; check them before dropping name tags.";
+    $("introHold").value = introHold();
     var box = $("introNames"); box.innerHTML = "";
     if (!it.names.length) { box.appendChild(el("div", { class: "muted small", text: "Nobody named yet: speaker names on the Multicam tab are matched against the introduction." })); return; }
     it.names.forEach(function (n) {
@@ -1644,7 +1649,20 @@
     if (it.host) state.config.speakers.forEach(function (s) {
       if (s.name.split(/\s+/)[0].toLowerCase() === it.host.name.split(/\s+/)[0].toLowerCase()) hostId = s.id;
     });
-    return { startSec: it.welcomeSec, wideSec: it.wideSec, endSec: it.endSec, hostId: hostId };
+    return { startSec: it.welcomeSec, wideSec: it.wideSec, endSec: it.endSec, hostId: hostId, holdSec: introHold() };
+  }
+  function introHold() { var v = state.config && state.config.introHoldSec; return v === undefined || v === null ? 15 : +v; }
+
+  /** Put a marker where the host says the welcome on a built sequence (the active one), so the intro is easy to find. */
+  function markWelcome() {
+    var it = state.tx.intro;
+    if (!it || !inPremiere) return Promise.resolve(null);
+    var host = it.host ? it.host.name : "the host";
+    return callHost("clearMarkers", [MARK_INTRO]).then(function () {
+      return callHost("addMarkers", [JSON.stringify({ prefix: MARK_INTRO, markers: [{ startSec: it.welcomeSec, endSec: it.welcomeEndSec, color: 0,
+        name: "Welcome (" + host + ")", comment: "“" + it.welcomeText + "” — solo on " + host + ", then the wide from " + fmt(it.wideSec) +
+          " for at least " + introHold() + " s while the members are introduced." }] })]);
+    }).then(function (r) { log("Marked the welcome at " + fmt(it.welcomeSec) + "."); return r; }, function (e) { log("Couldn't mark the welcome: " + e.message); return null; });
   }
 
   var markNames = guard(function () {
@@ -2012,109 +2030,159 @@
   });
 
   // ----------------------------------------------------- build as multicam
-  /** Progress of the last multicam build per sequence, so a stopped build can carry on where it left off. */
+  /**
+   * Per sequence: the builds applied to it (newest last, up to 5) for Recut / Undo, the run in progress (for
+   * Resume), and the multicam pieces' original label colour (to undo the Rose labels).
+   * { history: [{ desired, startSec, endSec, partial, at }], run: { mode, typed, done, ... } | null, baseLabel }
+   */
   function mcRuns() { return load("mcRuns", {}); }
+  function mcRecord(id) {
+    var rec = mcRuns()[id] || {};
+    if (rec.cuts && !rec.history) { // older single-run format
+      rec = { history: rec.done >= rec.cuts.length ? [{ desired: rec.cuts, startSec: rec.startSec, endSec: rec.endSec, partial: false }] : [],
+        run: rec.done < rec.cuts.length ? { mode: "build", typed: rec.cuts, done: rec.done, track: rec.track, startSec: rec.startSec, endSec: rec.endSec, desired: rec.cuts } : null };
+    }
+    rec.history = rec.history || [];
+    return rec;
+  }
+  function saveRecord(id, rec) { var all = mcRuns(); all[id] = rec; store("mcRuns", all); }
+  function mcSeqId() { return state.mcSeqId || (state.seq && mcRuns()[state.seq.sequenceID] ? state.seq.sequenceID : null); }
 
   function renderMcRow() {
-    var btn = $("btnBuildMc"), resume = $("btnResumeMc");
+    var btn = $("btnBuildMc"), resume = $("btnResumeMc"), undo = $("btnUndoMc");
     if (!btn) return;
-    var run = state.mcSeqId ? mcRuns()[state.mcSeqId] : null;
-    var left = run && run.done < run.cuts.length ? run.cuts.length - run.done : 0;
+    var id = mcSeqId(), rec = id ? mcRecord(id) : null, run = rec && rec.run;
+    var left = run && run.done < run.typed.length ? run.typed.length - run.done : 0;
     resume.classList.toggle("hidden", !left);
     resume.textContent = left ? "Resume (" + left + " left)" : "Resume";
+    btn.textContent = rec && rec.history.length ? "Recut multicam" : "Build as multicam (experimental)";
+    undo.classList.toggle("hidden", !(rec && rec.history.length));
+    undo.textContent = rec && rec.history.length > 1 ? "Undo multicam cut" : "Undo multicam cut (back to the wide)";
   }
 
   /**
-   * Apply the planned cut to a multicam (or Multi-Camera enabled nested) clip in the active sequence by pressing
-   * Cut to Camera at every angle change. resume: carry on from where the last build of this sequence stopped.
+   * Apply angles to a multicam (or Multi-Camera enabled nested) clip in the active sequence by pressing Cut to
+   * Camera. Every existing piece in the range is retyped too, so it works for a first build, a recut after
+   * settings changed, and an undo alike (earlier edit points just become through-edits on the same angle).
+   * mode: "build" (the current plan), "resume" (the run that stopped), "undo" (the build before the last one,
+   * or the wide everywhere after a first build).
    */
-  var buildMulticam = guard(function (resume) {
+  var buildMulticam = guard(function (mode) {
     if (!inPremiere || !hasNode || !K) throw new Error("Build as multicam needs the panel running inside Premiere on Windows.");
-    if (!state.result) throw new Error("Analyze first: the build follows the planned cut.");
-    if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
+    if (mode === "build") {
+      if (!state.result) throw new Error("Analyze first: the build follows the planned cut.");
+      if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
+    }
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
-    var cuts = D.toMulticamCuts(state.result, cams);
-    if (!cuts.length) throw new Error("The planned cut is empty.");
-    var shots = state.result.shots, startSec = cuts[0].sec, endSec = shots[shots.length - 1].endSec;
-    var onlyInOut = $("mcInOut").checked;
+    var verb = mode === "undo" ? "Undoing" : "Building multicam";
     function say(t) { $("mcNote").textContent = t; status(t, ""); }
     function step(t) { log("Build as multicam: " + t); }
-    var info = null, from = 0, keys = null;
-    return callHostWithin(10000, "multicamCovering", [JSON.stringify({ startSec: startSec, endSec: endSec })]).then(function (r) {
+    var seqId = null, rec = null, info = null, keys = null, desired = null, startSec = 0, endSec = 0, partial = false, typed = null, from = 0;
+
+    return callHostWithin(10000, "getPlayhead").then(function (p) {
+      seqId = p.sequenceID; rec = mcRecord(seqId);
+      if (mode === "resume") {
+        var run = rec.run;
+        if (!run || run.done >= run.typed.length) throw new Error("Nothing to resume on this sequence.");
+        typed = run.typed; from = run.done; desired = run.desired; startSec = run.startSec; endSec = run.endSec; partial = run.partial; mode = run.mode;
+      } else if (mode === "undo") {
+        if (!rec.history.length) throw new Error("No multicam build of this sequence to undo.");
+        var last = rec.history[rec.history.length - 1], prev = rec.history[rec.history.length - 2];
+        startSec = last.startSec; endSec = last.endSec; partial = last.partial;
+        desired = prev ? prev.desired : [{ sec: startSec, camera: 1 }];
+      } else {
+        desired = D.toMulticamCuts(state.result, cams);
+        if (!desired.length) throw new Error("The planned cut is empty.");
+        var shots = state.result.shots; startSec = desired[0].sec; endSec = shots[shots.length - 1].endSec;
+      }
+      return callHostWithin(10000, "multicamCovering", [JSON.stringify({ startSec: startSec, endSec: endSec })]);
+    }).then(function (r) {
       info = r;
       if (r.track === undefined) {
         throw new Error("“" + r.name + "” has no multicam clip. In a duplicate of this sequence, select the camera clips (V1, V2), Nest them, " +
           "right-click the nest > Multi-Camera > Enable, open that sequence and try again.");
       }
-      // Only part of it: the multicam sequence's own In/Out marks, inside the planned cut.
-      if (onlyInOut) {
-        if (r.inSec === null && r.outSec === null) throw new Error("Set In and Out marks on “" + r.name + "” around the part to build, or untick “Only between the In and Out marks”.");
-        var lo = Math.max(startSec, r.inSec === null ? startSec : r.inSec), hi = Math.min(endSec, r.outSec === null ? endSec : r.outSec);
-        if (hi - lo < 0.5) throw new Error("The In/Out marks (" + fmt(r.inSec || 0) + "–" + fmt(r.outSec || endSec) + ") don't overlap the planned cut (" + fmt(startSec) + "–" + fmt(endSec) + ").");
-        startSec = lo; endSec = hi;
-        cuts = D.toMulticamCuts(state.result, cams, { startSec: lo, endSec: hi });
+      if (mode === "build") {
+        // Only part of it: the multicam sequence's own In/Out marks, inside the planned cut.
+        if ($("mcInOut").checked) {
+          if (r.inSec === null && r.outSec === null) throw new Error("Set In and Out marks on “" + r.name + "” around the part to build, or untick “Only between the In and Out marks”.");
+          var lo = Math.max(startSec, r.inSec === null ? startSec : r.inSec), hi = Math.min(endSec, r.outSec === null ? endSec : r.outSec);
+          if (hi - lo < 0.5) throw new Error("The In/Out marks (" + fmt(r.inSec || 0) + "–" + fmt(r.outSec || endSec) + ") don't overlap the planned cut (" + fmt(startSec) + "–" + fmt(endSec) + ").");
+          startSec = lo; endSec = hi; partial = true;
+          desired = D.toMulticamCuts(state.result, cams, { startSec: lo, endSec: hi });
+        }
+        // Stretches with no multicam footage (the audio or the Out mark often runs a little past the cameras):
+        // trim them off the ends; inside, skip their cuts and set the angle again where the footage resumes.
+        var gaps = r.gaps.filter(function (g) { return g[1] > startSec + 0.05 && g[0] < endSec - 0.05; });
+        if (gaps.length) {
+          var skipped = gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ");
+          gaps.forEach(function (g) {
+            if (g[0] <= startSec + 0.05) startSec = g[1];
+            else if (g[1] >= endSec - 0.05) endSec = g[0];
+          });
+          if (endSec - startSec < 0.5) throw new Error("There's no multicam footage on V" + (r.track + 1) + " in the stretch to build.");
+          var inGap = function (t) { return gaps.some(function (g) { return t >= g[0] - 0.01 && t < g[1] - 0.01; }); };
+          var kept = D.toMulticamCuts(state.result, cams, { startSec: startSec, endSec: endSec }).filter(function (c) { return !inGap(c.sec); });
+          gaps.forEach(function (g) {
+            if (g[0] <= startSec || g[1] >= endSec) return;
+            var again = D.toMulticamCuts(state.result, cams, { startSec: g[1], endSec: g[1] + 0.05 })[0];
+            if (again) kept.push(again);
+          });
+          kept.sort(function (a, b) { return a.sec - b.sec; });
+          desired = kept;
+          step("no multicam footage at " + skipped + ": skipped; building " + fmt(startSec) + "–" + fmt(endSec));
+          say("No multicam footage at " + skipped + ", so that part is skipped.");
+        }
       }
-      // Stretches with no multicam footage (the audio or the Out mark often runs a little past the cameras):
-      // trim them off the ends; inside, skip their cuts and set the angle again where the footage resumes.
-      var gaps = r.gaps.filter(function (g) { return g[1] > startSec + 0.05 && g[0] < endSec - 0.05; });
-      if (gaps.length) {
-        var skipped = gaps.map(function (g) { return fmt(g[0]) + "–" + fmt(g[1]); }).join(", ");
-        gaps.forEach(function (g) {
-          if (g[0] <= startSec + 0.05) startSec = g[1];
-          else if (g[1] >= endSec - 0.05) endSec = g[0];
-        });
-        if (endSec - startSec < 0.5) throw new Error("There's no multicam footage on V" + (r.track + 1) + " in the stretch to build.");
-        var inGap = function (t) { return gaps.some(function (g) { return t >= g[0] - 0.01 && t < g[1] - 0.01; }); };
-        var kept = D.toMulticamCuts(state.result, cams, { startSec: startSec, endSec: endSec }).filter(function (c) { return !inGap(c.sec); });
-        gaps.forEach(function (g) {
-          if (g[0] <= startSec || g[1] >= endSec) return;
-          var resume = D.toMulticamCuts(state.result, cams, { startSec: g[1], endSec: g[1] + 0.05 })[0];
-          if (resume) { resume.afterGap = true; kept.push(resume); }
-        });
-        kept.sort(function (a, b) { return a.sec - b.sec; });
-        // A new clip starts after a gap, on whatever angle it had: always set it there.
-        cuts = kept.filter(function (c, i) { return i === 0 || c.afterGap || c.camera !== kept[i - 1].camera; });
-        step("no multicam footage at " + skipped + ": skipped; building " + fmt(startSec) + "–" + fmt(endSec));
-        say("No multicam footage at " + skipped + ", so that part is skipped.");
-      }
-      var angles = []; cuts.forEach(function (c) { if (angles.indexOf(c.camera) < 0) angles.push(c.camera); });
-      keys = keysFor(angles.sort());
-      step("angles: " + cams.map(function (c) { return c.name + " = camera " + (c.angle || c.videoTrack + 1); }).join(", ") + "; keys from " + keys.file.path);
       state.mcSeqId = r.sequenceID;
-      var prev = mcRuns()[r.sequenceID];
-      if (resume && prev && prev.done < prev.cuts.length && prev.cuts.length === cuts.length && Math.abs(prev.startSec - startSec) < 0.05) from = prev.done;
-      step("found " + (r.multicam ? "multicam" : "nested") + " clip(s) on V" + (r.track + 1) + " in “" + r.name + "”; " + cuts.length + " angle changes" +
-        (onlyInOut ? " between " + fmt(startSec) + " and " + fmt(endSec) : "") + (from ? ", resuming at " + (from + 1) : ""));
-      var all = mcRuns(); all[r.sequenceID] = { cuts: cuts, done: from, track: r.track, startSec: startSec, endSec: endSec, at: new Date().toISOString() };
-      store("mcRuns", all);
-      // A partial build first gets edit points at In and Out, so the angle changes can't run on past Out
-      // (Cut to Camera switches up to the next edit point) and whatever follows stays exactly as it was.
-      var edges = onlyInOut && !from ? callHostWithin(15000, "razorTrack", [JSON.stringify({ sequenceID: r.sequenceID, track: r.track,
+      if (typed) return null; // resuming: the list was saved
+      // A partial build gets edit points at In and Out, so nothing past Out changes (Cut to Camera switches up to
+      // the next edit point). Then every piece in the range is retyped, so earlier builds can't leave stale angles.
+      var edges = partial && mode === "build" ? callHostWithin(15000, "razorTrack", [JSON.stringify({ sequenceID: r.sequenceID, track: r.track,
         frames: [Math.round(startSec * r.fps), Math.round(endSec * r.fps)] })]).then(function (z) {
           step("edit points at In/Out: " + z.razored + " added" + (z.razored < 2 ? " (" + (2 - z.razored) + " already on a clip edge)" : ""));
         }) : Promise.resolve();
       return edges.then(function () {
-        return typeCuts({ cuts: cuts, keys: keys, from: from, label: "Building multicam", say: say, step: step,
-          onCut: function (n) { var a = mcRuns(); if (a[r.sequenceID]) { a[r.sequenceID].done = n; store("mcRuns", a); } } });
+        return callHostWithin(10000, "countClips", [JSON.stringify({ track: r.track, startSec: startSec, endSec: endSec })]);
+      }).then(function (c) {
+        if (rec.baseLabel === undefined || rec.baseLabel === null) rec.baseLabel = c.firstLabel; // before anything was labelled Rose
+        typed = D.multicamRetype(desired, c.starts, startSec, endSec);
+        step((mode === "undo" ? "undo" : rec.history.length ? "recut" : "build") + ": " + typed.length + " points to type (" +
+          c.starts.length + " existing pieces) between " + fmt(startSec) + " and " + fmt(endSec));
       });
+    }).then(function () {
+      var angles = []; typed.forEach(function (c) { if (angles.indexOf(c.camera) < 0) angles.push(c.camera); });
+      keys = keysFor(angles.sort());
+      step("angles: " + cams.map(function (c) { return c.name + " = camera " + angleOfCam(c); }).join(", ") + "; keys from " + keys.file.path);
+      rec.run = { mode: mode, typed: typed, done: from, track: info.track, startSec: startSec, endSec: endSec, desired: desired, partial: partial };
+      saveRecord(seqId, rec);
+      return typeCuts({ cuts: typed, keys: keys, from: from, label: verb, say: say, step: step,
+        onCut: function (n) { var x = mcRecord(seqId); if (x.run) { x.run.done = n; saveRecord(seqId, x); } } });
     }).then(function (res) {
+      // Done: record it (a build joins the history; an undo removes the build it undid).
+      rec = mcRecord(seqId); rec.run = null;
+      if (mode === "undo") rec.history.pop();
+      else { rec.history.push({ desired: desired, startSec: startSec, endSec: endSec, partial: partial, at: new Date().toISOString() }); if (rec.history.length > 5) rec.history.shift(); }
+      saveRecord(seqId, rec);
       renderMcRow();
       return callHostWithin(10000, "countClips", [JSON.stringify({ track: info.track, startSec: startSec, endSec: endSec })]).then(function (c) {
-        // Inside the range each angle change starts a piece (the first one sits on the range start), so one piece each.
-        var want = cuts.length, okAll = c.clips >= want;
-        // Camera 2 stretches of what was typed, to label Rose.
+        var want = typed.length, okAll = c.clips >= want;
+        // Camera 2 stretches, labelled Rose; pieces that aren't camera 2 any more get their original label back.
         var ranges = [];
-        cuts.forEach(function (cut, i) { if (cut.camera === 2) ranges.push([cut.sec, i + 1 < cuts.length ? cuts[i + 1].sec : endSec]); });
-        return labelCamera2(info.sequenceID, info.track, ranges).then(function (rose) {
-          say("Built “" + info.name + "” as multicam: " + res.done + " angle changes in " + Math.round(res.ms / 1000) + " s" + roseNote(rose) + ". " +
-            (okAll ? "The multicam track has " + c.clips + " pieces in the cut range, as expected."
-              : "Only " + c.clips + " of " + want + " cuts show on the track: raise Pause (Settings) and Resume, or undo and run again."));
-          status(okAll ? "Multicam build finished." : "Multicam build finished, but some cuts didn't land.", okAll ? "ok" : "err", 1);
-        });
+        typed.forEach(function (cut, i) { if (cut.camera === 2) ranges.push([cut.sec, i + 1 < typed.length ? typed[i + 1].sec : endSec]); });
+        return labelCamera2(info.sequenceID, info.track, ranges, { within: [startSec, endSec], color: rec.baseLabel })
+          .then(function (rose) { return mode === "build" ? markWelcome().then(function () { return rose; }) : rose; })
+          .then(function (rose) {
+            say((mode === "undo" ? "Undid the last multicam cut on “" + info.name + "”" + (rec.history.length ? " (back to the build before it)" : " (back to the wide)")
+              : "Built “" + info.name + "” as multicam") + ": " + res.done + " points in " + Math.round(res.ms / 1000) + " s" + roseNote(rose) + ". " +
+              (okAll ? "The multicam track has " + c.clips + " pieces in the range, as expected."
+                : "Only " + c.clips + " of " + want + " show on the track: raise Pause (Settings) and run it again."));
+            status(okAll ? (mode === "undo" ? "Undo finished." : "Multicam build finished.") : "Finished, but some cuts didn't land.", okAll ? "ok" : "err", 1);
+          });
       });
     }, function (e) {
       renderMcRow();
-      if (e.done !== undefined) $("mcNote").textContent = e.message + (e.done < cuts.length ? " Click Resume to carry on from there." : "");
+      if (e.done !== undefined && typed) $("mcNote").textContent = e.message + (e.done < typed.length ? " Click Resume to carry on from there." : "");
       throw e;
     });
   });
@@ -2142,7 +2210,8 @@
     $("btnExportPlan").disabled = b || !has || !hasNode;
     $("btnBuildMc").disabled = b || !has || !inPremiere;
     $("btnMarkMoves").disabled = b || !has;
-    $("btnResumeMc").disabled = b || !has || !inPremiere;
+    $("btnResumeMc").disabled = b || !inPremiere;
+    $("btnUndoMc").disabled = b || !inPremiere;
     if (typeof renderRecut === "function") renderRecut();
     var sel = state.tx.suggestions.some(function (s) { return !state.tx.off[s.id]; });
     $("btnTranscribe").disabled = b || !state.seq;
@@ -2268,8 +2337,9 @@
   $("btnKbdTrial").onclick = runKbdTrial;
   $("btnKbdStop").onclick = function () { kbdStop = true; };
   $("btnKbdBannerStop").onclick = function () { kbdStop = true; $("kbdBannerSmall").textContent = "Stopping after this cut…"; };
-  $("btnBuildMc").onclick = function () { buildMulticam(false); };
-  $("btnResumeMc").onclick = function () { buildMulticam(true); };
+  $("btnBuildMc").onclick = function () { buildMulticam("build"); };
+  $("btnResumeMc").onclick = function () { buildMulticam("resume"); };
+  $("btnUndoMc").onclick = function () { buildMulticam("undo"); };
   $("mcInOut").checked = !!load("mcInOut", false);
   $("mcInOut").onchange = function () { store("mcInOut", this.checked); };
   $("rose2").checked = load("rose2", true) !== false;
@@ -2278,6 +2348,7 @@
   $("btnIntroMarkers").onclick = markNames;
   $("btnIntroClear").onclick = clearNames;
   $("introCut").onchange = function () { state.config.introCut = this.checked; changed(true); };
+  $("introHold").onchange = function () { state.config.introHoldSec = Math.max(0, Math.min(60, +this.value || 0)); changed(true); renderIntro(); };
   $("btnReloadBanner").onclick = reloadPanel;
   $("btnUpdateNow").onclick = installUpdate;
   $("btnUpdateLater").onclick = function () {

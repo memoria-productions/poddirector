@@ -237,7 +237,9 @@ test("multicamCovering finds the multicam track for a range; countClips counts t
   // Two cuts with the razor, then count: three pieces inside the range.
   const qt = fake.ctx.qe.project.getActiveSequence().getVideoTrackAt(0);
   qt.razor("00:00:10:00"); qt.razor("00:00:20:00");
-  assert.equal(call("PD.countClips(" + q({ track: 0, startSec: 5, endSec: 25 }) + ")").clips, 3);
+  const cc = call("PD.countClips(" + q({ track: 0, startSec: 5, endSec: 25 }) + ")");
+  assert.equal(cc.clips, 3);
+  assert.deepEqual(cc.starts, [0, 10, 20], "the existing edit points, for a recut");
 });
 
 test("a multicam nest's angles are read through and mapped onto the outer timeline", () => {
@@ -274,6 +276,9 @@ test("a multicam nest's angles are read through and mapped onto the outer timeli
   assert.deepEqual([r.colored, r.unsupported], [1, false]);
   assert.equal(fake.video[0]._clips[1].label, 6);
   assert.equal(fake.video[0]._clips[0].label, undefined);
+  // A recut that moves camera 2 to the first piece: it turns Rose, the second gets its original label (5) back.
+  call("PD.colorClips(" + q({ sequenceID: "seq-1", track: 0, ranges: [[5, 15]], color: 6, within: [5, 35], otherColor: 5 }) + ")");
+  assert.deepEqual(fake.video[0]._clips.map((c) => c.label), [6, 5]);
   delete fake.video[0]._clips[0].setColorLabel;
   assert.equal(call("PD.colorClips(" + q({ track: 0, ranges: [[0, 15]], color: 6 }) + ")").unsupported, true, "says so when Premiere can't");
 });

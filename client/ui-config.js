@@ -52,6 +52,8 @@ window.PD_UI = {
         help: "Motion over this is a reposition or whip: always cut away from it." },
       { key: "settleSec", label: "Settle time", min: 0, max: 3, step: 0.1, unit: "s",
         help: "The camera must have been steady this long before PodDirector cuts to it." },
+      { key: "comeBackSec", label: "Come back after", min: 0, max: 10, step: 0.5, unit: "s", zero: "right away",
+        help: "After a move, only go back to the moving camera if it then stays steady at least this long. Shorter stretches stay on the wide, so quick banter while the operator swings between people plays on the wide instead of flicking back and forth." },
       { key: "maxWaitSec", label: "Wait to settle", min: 0, max: 4, step: 0.1, unit: "s",
         help: "If a cut would land mid-move, hold the previous shot up to this long for the camera to settle. Longer moves go to the wide." },
       { key: "slowMovesOnAir", label: "Slow moves on air", type: "select",

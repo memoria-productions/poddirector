@@ -61,6 +61,40 @@ test("cameraMoves lists the moving stretches in sequence time, big or slow", () 
   assert.deepEqual(D.cameraMoves(r, "W"), [], "not a moving camera");
 });
 
+test("banter: between two quick moves the cut stays on the wide instead of flicking back to the dolly", () => {
+  const input = talk();
+  // Two re-frames 3.5 s apart (operator swinging between people): about 2.5 s usable in between.
+  input.cameraMotion = { F: motion(42, [[12.2, 13.4, 15], [16.9, 18, 15]]) };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const r = D.plan(input, { speakers, cameras, style: base });
+  assert.equal(at(r, 15.5).cameraId, "W", "a short steady gap between moves stays wide");
+  assert.equal(at(r, 21).cameraId, "F", "back on the dolly once it has settled for good");
+  const flicker = D.plan(input, { speakers, cameras, style: Object.assign({}, base, { comeBackSec: 0 }) });
+  assert.equal(at(flicker, 15.5).cameraId, "F", "with Come back after = 0 it flicks back in the gap, as before");
+});
+
+test("a reaction on the dolly that isn't steady throughout goes to the wide", () => {
+  const input = makeCurves([["A", 1, 30], ["B", 15, 15.8]], { durationSec: 32 }); // B laughs during A's turn
+  input.cameraMotion = { F: motion(32, [[15.2, 15.6, 12]]) }; // the operator swings onto B mid-laugh
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "A", videoTrack: 2, shows: ["A"] },
+    { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const framing = { F: [{ startSec: 0, endSec: 32, speakerId: "B" }] }; // dolly framed on the listener
+  const r = D.plan(Object.assign(input, { framing }), { speakers, cameras,
+    style: Object.assign({}, base, { interjectionMode: "reaction", interjectionChance: 1 }) });
+  const during = r.shots.filter((s) => s.endSec > 15 && s.startSec < 16).map((s) => s.cameraId);
+  assert.ok(!during.includes("F"), "no shaky reaction on the dolly: " + JSON.stringify(during));
+});
+
+test("a late cut timing never delays a cut to the wide (it's the safety shot)", () => {
+  const input = makeCurves([["A", 1, 12], ["B", 8, 12.4], ["B", 12.4, 25]], { durationSec: 27 }); // overlap 8-12 goes wide
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "cA", videoTrack: 1, shows: ["A"] }, { id: "cB", videoTrack: 2, shows: ["B"] }];
+  const st = { openOnWideSec: 0, interjectionMode: "ignore", maxShotSec: 0, minWideSec: 0 };
+  const early = D.plan(input, { speakers, cameras, style: Object.assign({ cutTimingSec: 0 }, st) });
+  const late = D.plan(input, { speakers, cameras, style: Object.assign({ cutTimingSec: 0.5 }, st) });
+  const wideStart = (r) => r.shots.find((s) => s.cameraId === "W").startSec;
+  assert.equal(wideStart(late), wideStart(early), "late timing leaves the cut to the wide where it was");
+});
+
 test("without motion analysis the same follow cam is used straight through", () => {
   const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
   const r = D.plan(talk(), { speakers, cameras, style: base });

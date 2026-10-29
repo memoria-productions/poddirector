@@ -135,6 +135,9 @@
       <button id="btnBuildMc" class="btn" disabled title="Experimental. Applies this cut to a multicam clip in the active sequence by pressing your Cut to Camera shortcuts. In a duplicate of this sequence, Nest the camera clips and enable Multi-Camera on the nest first.">Build as multicam (experimental)</button>
       <button id="btnResumeMc" class="btn ghost hidden" title="Carry on from where the last multicam build of this sequence stopped">Resume</button>
     </div>
+    <div class="actions two">
+      <button id="btnUndoMc" class="btn ghost small hidden" title="Put the previous multicam build back on this sequence (after a first build: every piece back on the wide). Edit points stay as invisible through-edits.">Undo multicam cut</button>
+    </div>
     <label class="chip" style="margin:2px 0 4px" title="Build only the stretch between the In and Out marks on the multicam sequence (e.g. a test section, or redoing part of an episode). Edit points are added at In and Out so everything outside stays as it is."><input type="checkbox" id="mcInOut" /> Only between the In and Out marks</label>
     <label class="chip" style="margin:2px 0 4px" title="After a build (multicam or stacked), give every camera 2 shot the Rose label colour on the timeline, so the solo-cam shots stand out."><input type="checkbox" id="rose2" checked /> Label camera 2 shots Rose</label>
     <div id="mcNote" class="muted small"></div>
@@ -169,6 +172,7 @@
       <div class="card-head"><h2>Introduction <small id="introWhen"></small></h2></div>
       <p id="introNote" class="muted small"></p>
       <label class="chip" title="The multicam cut opens on whoever is hosting through the welcome, then goes to the wide while they introduce everyone (where the name tags go)."><input type="checkbox" id="introCut" checked /> Open on the host's solo cam, then the wide for the introductions</label>
+      <div class="kbd-opts"><label title="The wide stays up at least this long from the first name, so the lower-third name cards have time on screen (longer if the introductions run on)">Hold the wide at least <input id="introHold" type="number" min="0" max="60" step="1" value="15" /> s</label></div>
       <div id="introNames" class="intro-names"></div>
       <div class="actions two">
         <button id="btnIntroMarkers" class="btn primary" disabled title="A marker at each name, named for the lower third, to drop your name tags on">Add lower-third markers</button>
