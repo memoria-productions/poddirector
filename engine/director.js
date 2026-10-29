@@ -765,9 +765,35 @@
       out[c.id] = grid;
       info[c.id] = { hopSec: mhop, states: Array.prototype.slice.call(st),
         steadyPct: round1(100 * counts[0] / n), slowPct: round1(100 * counts[1] / n), fastPct: round1(100 * counts[2] / n),
-        lowDetail: !readable };
+        // No readings at all: nothing on the track to measure (e.g. the camera moved into a multicam nest).
+        // Its moves can't be avoided, which the panel says loudly; a plain backdrop is just lowDetail.
+        lowDetail: !readable && known > 0, noFootage: known === 0 };
     });
     return { grid: out, info: info };
+  }
+
+  /**
+   * Where a moving camera is moving, from a plan's stability info: [{ startSec, endSec, kind: "big" | "slow" }] in
+   * sequence time. Moves closer than joinSec merge; shorter than minSec are dropped (single-frame glitches).
+   */
+  function cameraMoves(result, cameraId, opts) {
+    opts = opts || {};
+    var info = result.stability && result.stability[cameraId];
+    if (!info || !info.states) return [];
+    var hop = info.hopSec, off = info.offsetSec || 0, joinSec = opts.joinSec === undefined ? 0.5 : opts.joinSec;
+    var minSec = opts.minSec === undefined ? 0.3 : opts.minSec, out = [];
+    for (var i = 0; i < info.states.length;) {
+      var s = info.states[i];
+      if (s === STEADY) { i++; continue; }
+      var j = i, big = false;
+      while (j < info.states.length && info.states[j] !== STEADY) { if (info.states[j] === FAST) big = true; j++; }
+      var a = off + i * hop, b = off + j * hop, last = out[out.length - 1];
+      if (last && a - last.endSec <= joinSec) { last.endSec = b; if (big) last.kind = "big"; }
+      else out.push({ startSec: a, endSec: b, kind: big ? "big" : "slow" });
+      i = j;
+    }
+    return out.filter(function (m) { return m.endSec - m.startSec >= minSec; })
+      .map(function (m) { return { startSec: round3(m.startSec), endSec: round3(m.endSec), kind: m.kind }; });
   }
 
   function stabilityHelpers(stab, style, ctx) {
@@ -1470,7 +1496,7 @@
   }
 
   return {
-    VERSION: "0.11.0",
+    VERSION: "0.12.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
@@ -1481,6 +1507,7 @@
     planRange: planRange,
     toEditPayload: toEditPayload,
     toMulticamCuts: toMulticamCuts,
+    cameraMoves: cameraMoves,
     _internal: { smoothRuns: smoothRuns, calibrate: calibrate, percentile: percentile, shotAt: shotAt }
   };
 });

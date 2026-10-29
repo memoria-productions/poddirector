@@ -33,6 +33,34 @@ test("follow cam: cuts to wide while the operator re-frames, back once settled",
   assert.ok(r.stability.F.fastPct > 0);
 });
 
+test("a moving camera with no footage to measure is flagged noFootage, not plain-background lowDetail", () => {
+  const input = talk();
+  input.cameraMotion = { F: { hopSec: HOP, values: new Float32Array(Math.ceil(42 / HOP)).fill(NaN) } }; // empty track
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const r = D.plan(input, { speakers, cameras, style: base });
+  assert.equal(r.stability.F.noFootage, true);
+  assert.equal(r.stability.F.lowDetail, false);
+  const real = D.plan(Object.assign(talk(), { cameraMotion: { F: motion(42, [[12.2, 13.6, 15]]) } }), { speakers, cameras, style: base });
+  assert.equal(real.stability.F.noFootage, false);
+});
+
+test("cameraMoves lists the moving stretches in sequence time, big or slow", () => {
+  const input = talk();
+  input.cameraMotion = { F: motion(42, [[12.2, 13.6, 15], [20, 22, 3], [30, 30.1, 20]]) };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
+  const r = D.plan(input, { speakers, cameras, style: base });
+  const moves = D.cameraMoves(r, "F");
+  assert.equal(moves.length, 2, JSON.stringify(moves)); // the 0.1 s glitch at 30 s is too short to keep
+  assert.equal(moves[0].kind, "big");
+  assert.ok(Math.abs(moves[0].startSec - 12.2) < 0.4 && Math.abs(moves[0].endSec - 13.6) < 0.4, JSON.stringify(moves[0]));
+  assert.equal(moves[1].kind, "slow");
+  // Range plans: stability carries its offset, so moves come back in sequence time.
+  const ranged = D.planRange(input, { speakers, cameras, style: base }, 10, 40);
+  const rm = D.cameraMoves(ranged, "F");
+  assert.ok(Math.abs(rm[0].startSec - 12.2) < 0.4, JSON.stringify(rm[0]));
+  assert.deepEqual(D.cameraMoves(r, "W"), [], "not a moving camera");
+});
+
 test("without motion analysis the same follow cam is used straight through", () => {
   const cameras = [{ id: "W", videoTrack: 0, shows: ["A", "B"] }, { id: "F", videoTrack: 1, shows: [], follows: true, moving: true }];
   const r = D.plan(talk(), { speakers, cameras, style: base });
@@ -86,7 +114,7 @@ test("unreadable stretches: treated as moving on a readable camera, ignored on a
   const r1 = D.plan(readable, { speakers, cameras, style: Object.assign({}, base, { slowMovesOnAir: false }) });
   assert.equal(at(r1, 19.5).cameraId, "W");
   const plain = talk();
-  plain.cameraMotion = { F: motion(42, [[0, 42, NaN]]) };
+  plain.cameraMotion = { F: motion(42, [[0, 5, NaN], [8, 42, NaN]]) }; // only a few seconds readable
   const r2 = D.plan(plain, { speakers, cameras, style: Object.assign({}, base, { slowMovesOnAir: false }) });
   assert.equal(at(r2, 19.5).cameraId, "F");
   assert.equal(r2.stability.F.lowDetail, true);

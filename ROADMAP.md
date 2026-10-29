@@ -71,6 +71,11 @@
 - **Reads inside multicam nests:** a nested/multicam sequence's angles become camera tracks mapped onto the timeline, so movement and framing analysis still see the dolly; one click moves a saved setup onto the angles.
 - **Camera 2 shots labelled Rose** after any build (option, on by default).
 
+## v0.12 (added)
+
+- **No more silent "steady":** a moving camera with no footage to measure is flagged (red warning, builds refuse) instead of being treated as steady; a sequence whose cameras moved into a nest switches to the nest's angles at Scan.
+- **Mark camera moves:** timeline markers over every detected move (red big, orange slow).
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

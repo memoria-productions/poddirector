@@ -7,7 +7,7 @@
   var hasNode = typeof require === "function" && typeof process !== "undefined";
   var D = window.PodDirector, T = window.PodTranscript, A = window.PodAnalyzer, W = window.PodTranscriber, UI = window.PD_UI;
   var fs = hasNode ? require("fs") : null, path = hasNode ? require("path") : null, os = hasNode ? require("os") : null;
-  var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ", MARK_NAME = "[PD name] ";
+  var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ", MARK_NAME = "[PD name] ", MARK_MOVE = "[PD move] ";
   var HOP = 0.025;
 
   var state = {
@@ -164,6 +164,16 @@
         state.result = null; state.curves = {}; state.motion = {}; state.framing = {};
         state.tx = { segments: null, suggestions: [], off: {}, nudges: {} };
         loadCachedTranscript();
+      }
+      // Cameras moved into a multicam nest: a camera left pointing at an empty track can't be seen (nor checked
+      // for movement), so follow the cameras into the nest's angles.
+      if (nestAngleTracks().length && !usesNest() && state.config.cameras.some(function (c) {
+        var t = vtrack(c.videoTrack); return c.enabled !== false && (!t || !t.clipCount);
+      })) {
+        useNestAngles();
+        setNote("Your cameras now sit inside the multicam nest on V" + (nestAngleTracks()[0].nestTrack + 1) +
+          ", so PodDirector reads them there: " + state.config.cameras.filter(function (c) { return c.angle; }).map(function (c) { return c.name + " = angle " + c.angle; }).join(", ") + ".");
+        log("Cameras switched to the nest's angles (their stacked tracks were empty).");
       }
       var fixedN = fixChannels(state.config, info);
       if (fixedN) {
@@ -673,7 +683,10 @@
         "On for a dolly, slider, handheld or operated camera: PodDirector reads its picture and only cuts to it when it's steady. Leave off for locked-off cameras like a static wide (faster analysis, never held back)."));
       chips.appendChild(chip("Enabled", cm.enabled !== false, function (on) { cm.enabled = on; renderModeNote(); changed(); }));
       var stab = state.result && state.result.stability && state.result.stability[cm.id];
-      if (cm.moving && stab) {
+      if (cm.moving && stab && stab.noFootage) {
+        row.appendChild(el("div", { class: "warn small", text: "\u26A0 No footage on this camera's track to check for movement, so the cut can't avoid its moves. " +
+          (nestAngleTracks().length ? "Its camera is inside the multicam nest: use the nest's angles (above)." : "Check the camera's track.") }));
+      } else if (cm.moving && stab) {
         row.appendChild(el("div", { class: "muted small", text: "Steady " + stab.steadyPct + "% \u00B7 slow moves " + stab.slowPct + "% \u00B7 big moves " + stab.fastPct + "%" +
           (stab.lowDetail ? " \u2014 plain background: movement is hard to judge, treated as steady" : "") }));
       } else if (cm.moving && state.result) {
@@ -992,7 +1005,9 @@
         state.curves[curveKey(sp)] = demoCurves[dk];
       });
       state.config.cameras.forEach(function (c) { if (c.moving) state.motion[motionKey(c)] = window.PD_DEMO.motion(state.seq, c.videoTrack); });
-      replan(); renderCameras(); status("Demo analysis ready.", "ok", 1); return;
+      replan(); renderCameras();
+      if (blindCameras().length) status(blindMessage(blindCameras()), "err"); else status("Demo analysis ready.", "ok", 1);
+      return;
     }
     if (!state.tools.ffmpeg) throw new Error("ffmpeg is not available. See Settings.");
     var keys = {}, jobs = [];
@@ -1015,7 +1030,9 @@
       replan();
       warnIdenticalMics();
       renderSpeakers(); renderCameras();
-      if ($("statusText").className !== "err") status("Analysis ready \u2014 tweak the style and watch the preview update.", "ok", 1);
+      var blind = blindCameras();
+      if (blind.length) status(blindMessage(blind), "err");
+      else if ($("statusText").className !== "err") status("Analysis ready \u2014 tweak the style and watch the preview update.", "ok", 1);
     });
   });
 
@@ -1303,7 +1320,37 @@
   });
 
   var clearCamMarkers = guard(function () {
-    return callHost("clearMarkers", [MARK_CAM]).then(function (r) { status("Removed " + r.removed + " PodDirector markers.", "ok"); });
+    var n = 0;
+    return callHost("clearMarkers", [MARK_CAM]).then(function (r) { n += r.removed; return callHost("clearMarkers", [MARK_MOVE]); })
+      .then(function (r) { n += r.removed; status("Removed " + n + " PodDirector markers.", "ok"); });
+  });
+
+  /**
+   * Your movement check, made visible: a marker over every stretch where a moving camera is moving (red = big
+   * move, orange = slow drift), on the analyzed sequence. The cut avoids exactly these.
+   */
+  var markMoves = guard(function () {
+    if (!state.result) throw new Error("Analyze first.");
+    if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
+    var cams = state.config.cameras.filter(function (c) { return c.enabled !== false && c.moving; });
+    if (!cams.length) throw new Error("No camera has Check for movement ticked.");
+    var markers = [];
+    cams.forEach(function (c) {
+      D.cameraMoves(state.result, c.id).forEach(function (m) {
+        markers.push({ startSec: m.startSec, endSec: m.endSec, color: m.kind === "big" ? 1 : 3, name: c.name + (m.kind === "big" ? " moving" : " drifting"),
+          comment: (m.kind === "big" ? "Big move" : "Slow move") + " on " + c.name + ", " + fmt(m.startSec) + "–" + fmt(m.endSec) + ". PodDirector keeps this camera off air here." });
+      });
+    });
+    if (!inPremiere) { status(markers.length + " camera moves found (markers need Premiere).", "ok"); return; }
+    return callHost("getPlayhead").then(function (p) {
+      if (p.sequenceID !== state.seq.sequenceID) throw new Error("Open the analyzed sequence (“" + state.seq.name + "”) first: the markers go on it.");
+      return callHost("clearMarkers", [MARK_MOVE]);
+    }).then(function () {
+      return callHost("addMarkers", [JSON.stringify({ prefix: MARK_MOVE, markers: markers })]);
+    }).then(function (r) {
+      var big = markers.filter(function (m) { return m.color === 1; }).length;
+      status("Marked " + r.added + " camera moves (" + big + " big in red, " + (r.added - big) + " slow in orange).", "ok", 1);
+    });
   });
 
   // Cut history per original sequence: the copy we built and the last few cuts applied to it.
@@ -1356,6 +1403,18 @@
     return r && r.shown && r.shown.length ? "; turned on " + r.shown.map(function (t) { return "V" + (t + 1); }).join(", ") + ", which had its eye off" : "";
   }
 
+  /** Cameras set to Check for movement that had no footage to measure: their moves can't be avoided. */
+  function blindCameras() {
+    var stab = state.result && state.result.stability;
+    if (!stab) return [];
+    return state.config.cameras.filter(function (c) { return c.enabled !== false && c.moving && stab[c.id] && stab[c.id].noFootage; });
+  }
+  function blindMessage(blind) {
+    return blind.map(function (c) { return "“" + c.name + "”"; }).join(", ") + " is set to Check for movement, but there's no footage on its track to check, " +
+      "so the cut would land on it mid-move. " + (nestAngleTracks().length ? "Use the nest's angles (Cameras card) and Analyze again."
+        : "Point it at the track with its footage, or untick Check for movement.");
+  }
+
   // ------------------------------------------------- camera 2 in Rose
   var ROSE = 6; // Premiere's label colours: Violet 0, Iris 1, Caribbean 2, Lavender 3, Cerulean 4, Forest 5, Rose 6, …
   function angleOfCam(c) { return c.angle || (c.videoTrack < NEST_BASE ? c.videoTrack + 1 : (c.videoTrack - NEST_BASE) % 16); }
@@ -1380,6 +1439,7 @@
   function roseNote(r) { return r && !r.unsupported && r.colored ? "; " + r.colored + " camera 2 shots labelled Rose" : ""; }
 
   function currentPayload() {
+    if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
     if (usesNest()) throw new Error("Your cameras are angles inside a multicam nest: use Build as multicam. (Build cut on a copy and Recut switch stacked camera tracks.)");
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
     return D.toEditPayload(state.result, cams, state.seq.fps, { layered: load("layered", true) !== false });
@@ -1971,6 +2031,7 @@
   var buildMulticam = guard(function (resume) {
     if (!inPremiere || !hasNode || !K) throw new Error("Build as multicam needs the panel running inside Premiere on Windows.");
     if (!state.result) throw new Error("Analyze first: the build follows the planned cut.");
+    if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
     var cuts = D.toMulticamCuts(state.result, cams);
     if (!cuts.length) throw new Error("The planned cut is empty.");
@@ -2080,6 +2141,7 @@
     $("btnClearMarkers").disabled = b || !inPremiere;
     $("btnExportPlan").disabled = b || !has || !hasNode;
     $("btnBuildMc").disabled = b || !has || !inPremiere;
+    $("btnMarkMoves").disabled = b || !has;
     $("btnResumeMc").disabled = b || !has || !inPremiere;
     if (typeof renderRecut === "function") renderRecut();
     var sel = state.tx.suggestions.some(function (s) { return !state.tx.off[s.id]; });
@@ -2101,6 +2163,7 @@
   $("btnAnalyze").onclick = analyze;
   $("btnMarkers").onclick = previewMarkers;
   $("btnClearMarkers").onclick = clearCamMarkers;
+  $("btnMarkMoves").onclick = markMoves;
   // Two-step confirm inside the panel (native dialogs are unreliable in CEP).
   var armed = null;
   $("btnApply").onclick = function () {
