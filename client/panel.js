@@ -70,7 +70,7 @@
   }
   function guard(fn) {
     return function () {
-      if (state.busy) return;
+      if (state.busy) { status("PodDirector is still busy with the last job — wait for it to finish (see the status line and the Log), then try again.", "err"); return; }
       var args = arguments;
       state.busy = true; setButtons();
       Promise.resolve().then(function () { return fn.apply(null, args); })
@@ -1978,7 +1978,8 @@
         kbdBanner("running", opts.label + " — hands off", (done + 1) + " of " + total + ": camera " + c.camera + " at " + fmt(c.sec) +
           " · about " + (left > 90 ? Math.ceil(left / 60) + " min" : Math.ceil(left) + " s") + " left. Switching windows stops it.");
         opts.say(opts.label + ": " + (done + 1) + " of " + total);
-        return callHostWithin(10000, "setPlayhead", [c.sec]).then(function () { return wait(pause); }).then(function () {
+        // Snapped to the exact frame, so Cut to Camera lands on an existing edit point rather than a frame before it.
+        return callHostWithin(10000, "setPlayhead", [c.sec, true]).then(function () { return wait(pause); }).then(function () {
           return sender.send(key.usable); // the typeable shortcut ({ key, ctrl, alt, shift }), not the whole entry
         }).then(function (reply) {
           opts.step((done + 1) + ": " + key.label + " at " + fmt(c.sec) + " → " + reply);
@@ -2090,6 +2091,8 @@
         var last = rec.history[rec.history.length - 1], prev = rec.history[rec.history.length - 2];
         startSec = last.startSec; endSec = last.endSec; partial = last.partial;
         desired = prev ? prev.desired : [{ sec: startSec, camera: 1 }];
+        step("undo on “" + seqId + "”: " + rec.history.length + " build(s) kept; restoring " +
+          (prev ? "the build from " + (prev.at || "earlier") : "the wide everywhere") + " between " + fmt(startSec) + " and " + fmt(endSec));
       } else {
         desired = D.toMulticamCuts(state.result, cams);
         if (!desired.length) throw new Error("The planned cut is empty.");

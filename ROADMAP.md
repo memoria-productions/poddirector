@@ -85,6 +85,11 @@
 
 - **Recut multicam / Undo multicam cut:** every build retypes all pieces in its range (so leftover edit points can't keep stale angles); the last 5 builds per sequence are kept, and Undo re-applies the previous one (or the wide everywhere after a first build). Rose labels follow.
 
+## v0.15 (added)
+
+- **Reactions to the wide:** a reaction from someone without a usable close-up cuts to the wide instead of being skipped, and two or more listeners reacting together always cut to the wide.
+- **Undo and Recut fix:** cuts land on exact frames, so they hit the edit points left by earlier builds instead of leaving one-frame slivers. A click while busy now says so.
+
 ## Next candidates
 
 - **Jump-cut / silence removal** (AutoPod's "Jump Cut Editor"): ripple-delete silences on every track, using the existing mic analysis

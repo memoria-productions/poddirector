@@ -62,6 +62,37 @@ test("engine: the follow cam is only used when it is on the person talking", () 
   assert.equal(at(50).cameraId, "F");
 });
 
+test("engine: a reaction from someone without a close-up goes to the wide (or stays put if set to skip)", () => {
+  // Paul talks with the dolly on him; Jess says "yeah" at 30 s. There's no close-up of Jess.
+  const input = makeCurves([["P", 1, 60], ["J", 30, 30.6]], { durationSec: 62, speakers: ["P", "J"] });
+  input.framing = { F: [{ startSec: 0, endSec: 62, speakerId: "P" }] };
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["P", "J"] }, { id: "F", videoTrack: 1, shows: [], follows: true }];
+  const sp = [{ id: "P", name: "Paul" }, { id: "J", name: "Jess" }];
+  const style = { openOnWideSec: 0, maxShotSec: 0, minWideSec: 0, interjectionMode: "reaction", interjectionChance: 1 };
+  const at = (r, t) => r.shots.find((x) => x.startSec <= t && x.endSec > t);
+  const r = D.plan(input, { speakers: sp, cameras, style });
+  assert.equal(at(r, 30.3).cameraId, "W");
+  assert.equal(at(r, 30.3).reason, "interjection-wide");
+  assert.equal(at(r, 20).cameraId, "F", "on Paul otherwise");
+  const skip = D.plan(input, { speakers: sp, cameras, style: Object.assign({ reactionNoCloseup: "skip" }, style) });
+  assert.equal(at(skip, 30.3).cameraId, "F");
+});
+
+test("engine: two listeners reacting together always cut to the wide", () => {
+  const input = makeCurves([["P", 1, 60], ["J", 30, 30.6], ["T", 30.4, 31]], { durationSec: 62, speakers: ["P", "J", "T"] });
+  const cameras = [{ id: "W", videoTrack: 0, shows: ["P", "J", "T"] }, { id: "cP", videoTrack: 1, shows: ["P"] },
+    { id: "cJ", videoTrack: 2, shows: ["J"] }, { id: "cT", videoTrack: 3, shows: ["T"] }];
+  const sp = [{ id: "P", name: "Paul" }, { id: "J", name: "Jess" }, { id: "T", name: "Tanya" }];
+  // Even with reactions rare and close-ups available, a shared laugh is a group moment.
+  const style = { openOnWideSec: 0, maxShotSec: 0, minWideSec: 0, interjectionMode: "reaction", interjectionChance: 0 };
+  const r = D.plan(input, { speakers: sp, cameras, style });
+  const s = r.shots.find((x) => x.startSec <= 30.5 && x.endSec > 30.5);
+  assert.equal(s.cameraId, "W");
+  assert.equal(s.reason, "interjection-wide");
+  const off = D.plan(input, { speakers: sp, cameras, style: Object.assign({}, style, { groupReactWide: false }) });
+  assert.equal(off.shots.find((x) => x.startSec <= 30.5 && x.endSec > 30.5).cameraId, "cP", "switch off: rare reactions stay on Paul");
+});
+
 test("engine: a listener's reaction can use the follow cam when it happens to be on them", () => {
   const input = makeCurves([["P", 1, 60], ["J", 30, 30.6]], { durationSec: 62, speakers: ["P", "J"] });
   input.framing = { F: [{ startSec: 0, endSec: 25, speakerId: "P" }, { startSec: 26, endSec: 40, speakerId: "J" }, { startSec: 41, endSec: 62, speakerId: "P" }] };

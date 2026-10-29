@@ -56,6 +56,8 @@
     interjectionMode: "reaction", // "ignore" | "reaction" | "wide"
     interjectionChance: 0.6,   // 0..1 share of eligible interjections that get a shot
     reactionShotSec: 1.6,      // length of a reaction shot
+    reactionNoCloseup: "wide", // "wide" | "skip": a reaction from someone without a usable close-up (the dolly is on the speaker)
+    groupReactWide: true,      // two or more listeners reacting at once (a laugh round the table) always cut to the wide
     // Long monologues
     maxShotSec: 18,            // break a single shot longer than this (0 = never)
     cutawayMode: "mix",        // "wide" | "reaction" | "alternate" | "mix"
@@ -594,26 +596,48 @@
     var fr = ctx.fr;
     var len = Math.round(style.reactionShotSec * fr);
     var lead = Math.round(0.15 * fr);
-    var lastEnd = -Infinity;
-    interj.forEach(function (ij) {
+    var lastEnd = -Infinity, near = Math.round(1.0 * fr), used = {};
+    var ci = ctx.ci;
+    interj.forEach(function (ij, idx) {
+      if (used[idx]) return;
       var sp = speakers[ij.speaker];
       if (!sp.interjections) return;
-      if (ctx.rand() > style.interjectionChance * (1 + featureOf(sp))) return;
-      var host = shotAt(shots, ij.start);
+      // Several listeners reacting together (a laugh round the table) is a group moment: the wide, every time.
+      var group = [idx];
+      if (style.groupReactWide && ci.hasWide) {
+        interj.forEach(function (o, k) {
+          if (k !== idx && !used[k] && o.speaker !== ij.speaker && speakers[o.speaker].interjections &&
+              o.start <= ij.end + near && o.end >= ij.start - near) group.push(k);
+        });
+      }
+      group.forEach(function (k) { used[k] = true; });
+      var isGroup = group.length > 1;
+      var roll = ctx.rand();
+      if (!isGroup && roll > style.interjectionChance * (1 + featureOf(sp))) return;
+      var gs = ij.start, ge = ij.end;
+      group.forEach(function (k) { gs = Math.min(gs, interj[k].start); ge = Math.max(ge, interj[k].end); });
+      var host = shotAt(shots, gs);
       if (!host || host.locked || host.reason === "crosstalk" || host.reason === "pause") return;
-      if (host.speakers.length === 1 && host.speakers[0] === ij.speaker) return; // already on them
-      var a = Math.max(ij.start - lead, host.start);
-      var b = Math.min(Math.max(ij.end + lead, a + len), host.end);
+      if (!isGroup && host.speakers.length === 1 && host.speakers[0] === ij.speaker) return; // already on them
+      var a = Math.max(gs - lead, host.start);
+      var b = Math.min(Math.max(ge + lead, a + len), host.end);
       if (a < lastEnd + Math.round(style.minShotSec * fr)) return; // don't stack reactions
       // Leave room so the host shot survives on both sides.
       var room = Math.round(Math.min(style.minShotSec, 1.0) * fr);
       if (a - host.start < room || host.end - b < room) return;
-      var cam = style.interjectionMode === "wide" ? ctx.ci.widest : (ctx.ci.fixedCloseups(ij.speaker)[0] || framedOn(ctx, ij.speaker, a, b));
-      // Same camera is fine only for a follow cam that's pointed at the listener (it'll be off the speaker anyway).
-      if (!cam || (cam === host.cameraId && !ctx.ci.isFollow(cam))) return;
-      shots = insertShot(shots, { start: a, end: b, cameraId: cam,
-        reason: style.interjectionMode === "wide" ? "interjection-wide" : "reaction",
-        speakers: [ij.speaker], onset: false, locked: false, keepShort: true });
+      var cam = null, reason = "reaction";
+      if (isGroup || style.interjectionMode === "wide") { cam = ci.widest; reason = "interjection-wide"; }
+      else {
+        cam = ci.fixedCloseups(ij.speaker)[0] || framedOn(ctx, ij.speaker, a, b);
+        // Same camera is fine only for a follow cam that's pointed at the listener (it'll be off the speaker anyway).
+        if (!cam || (cam === host.cameraId && !ci.isFollow(cam))) {
+          // No usable close-up of them (the dolly is on the speaker): show the reaction on the wide instead.
+          if (style.reactionNoCloseup !== "skip" && ci.hasWide) { cam = ci.widest; reason = "interjection-wide"; } else return;
+        }
+      }
+      if (!cam || (cam === host.cameraId && !ci.isFollow(cam))) return; // already on that shot
+      shots = insertShot(shots, { start: a, end: b, cameraId: cam, reason: reason,
+        speakers: group.map(function (k) { return interj[k].speaker; }), onset: false, locked: false, keepShort: true });
       lastEnd = b;
     });
     return shots;
@@ -1542,7 +1566,7 @@
   }
 
   return {
-    VERSION: "0.14.0",
+    VERSION: "0.15.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

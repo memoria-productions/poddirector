@@ -185,12 +185,18 @@ var PD = (function () {
     return ok({ sec: sec(seq.getPlayerPosition()), sequenceID: seq.sequenceID, inSec: m.inSec, outSec: m.outSec });
   }
 
-  function setPlayhead(s) {
+  /**
+   * Move the playhead. snap: land exactly on the start of the nearest frame (in the sequence's own ticks), which
+   * Cut to Camera needs to hit an existing edit point: a time rounded to the millisecond can fall a hair before
+   * the edit at 23.976 fps, and then Premiere cuts a one-frame sliver off the piece before instead.
+   */
+  function setPlayhead(s, snap) {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
-    var ticks = Math.round(Number(s) * TPS);
+    var ticks = Math.round(Number(s) * TPS), tpf = parseFloat(seq.timebase);
+    if (snap && tpf > 0) ticks = Math.round(Math.round(ticks / tpf) * tpf);
     seq.setPlayerPosition(String(ticks));
-    return ok();
+    return ok({ ticks: String(ticks) });
   }
 
   /** json: { inSec?, outSec? } -> sets the active sequence's In and/or Out point. */
