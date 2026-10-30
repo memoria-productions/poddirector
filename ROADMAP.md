@@ -100,6 +100,10 @@
 - **Dolly stays on the last person until it moves** (when there is no Who's in the shot reading), and a follow-cam shot that runs across a change of speaker is checked against whoever has the floor at each moment.
 - **Picture names checked by voice:** a long steady dolly stretch named after someone silent while another person talks is treated as on the talker. A follow-cam shot spanning several speakers is split per speaker, so monologue cutaways measure one person's turn. A brief aside over someone who carries on isn't crosstalk.
 
+## v0.18.2 (added)
+
+- **"Recut multicam" only when the build is really there.** Scan checks that the cuts of the last multicam build are still on the timeline. If they're gone (undone in Premiere, assembled again, or a new sequence that shares an ID with one built before), the record is dropped and the button reads Build as multicam.
+
 ## v0.18.1 (added)
 
 - **Multicams whose angles are per-camera nests** (`<ep>_mc` of `<ep>_a_cam` / `<ep>_b_cam`, as PodGrip assembles them) are read down to the camera files. Before, Scan found no angles, so both cameras sat on V1, Build as multicam wasn't offered, and the camera 2 labels didn't apply.

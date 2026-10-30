@@ -227,6 +227,15 @@ test("multicam recut: every existing piece and every new cut gets the angle the 
   assert.deepEqual(D.multicamRetype(desired, [2, 15.01, 45], 5, 40).map((c) => c.sec), [5, 15, 25]);
 });
 
+test("a multicam build counts as there only while its cut points are on the track", () => {
+  const desired = [{ sec: 0, camera: 1 }, { sec: 15, camera: 2 }, { sec: 25, camera: 1 }, { sec: 33, camera: 2 }];
+  assert.equal(D.multicamBuildPresent(desired, [0, 15.01, 25, 33], 0, 40), true);
+  assert.equal(D.multicamBuildPresent(desired, [0, 15, 25], 0, 40), true); // one trimmed away by hand
+  assert.equal(D.multicamBuildPresent(desired, [0], 0, 40), false); // undone, or a fresh assembly: one whole piece
+  assert.equal(D.multicamBuildPresent(desired, [0, 7, 19], 0, 40), false); // someone else's cuts
+  assert.equal(D.multicamBuildPresent([{ sec: 0, camera: 1 }], [0], 0, 40), true); // nothing to check
+});
+
 test("manual locks override the automatic choice", () => {
   const r = D.plan(conversation(), { speakers, cameras, overrides: [{ startSec: 15, endSec: 20, cameraId: "cW" }] });
   assert.equal(at(r, 17).cameraId, "cW");

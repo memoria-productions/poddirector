@@ -167,6 +167,7 @@
       var changed = !state.seq || state.seq.sequenceID !== info.sequenceID;
       state.seq = expandNests(info);
       forgetDeletedCopy(info.sequenceID);
+      forgetUndoneMulticam(info.sequenceID);
       $("seqLabel").textContent = info.name + " · " + info.fps.toFixed(2) + " fps · " + fmt(info.durationSec);
       log("Sequence " + info.name + ": " + info.audioTracks.length + " audio, " + info.videoTracks.filter(function (v) { return !v.virtual; }).length + " video tracks, " + fmt(info.durationSec));
       info.videoTracks.forEach(function (v) {
@@ -2169,6 +2170,31 @@
     return rec;
   }
   function saveRecord(id, rec) { var all = mcRuns(); all[id] = rec; store("mcRuns", all); }
+  /**
+   * At Scan: forget a multicam build whose cuts aren't on the timeline any more (undone in Premiere, a fresh
+   * assembly into the same sequence, or another sequence that happens to share its ID), so "Recut multicam"
+   * and Resume only show when there really is a build here.
+   */
+  function forgetUndoneMulticam(seqId) {
+    if (!inPremiere || !mcRuns()[seqId]) return;
+    var rec = mcRecord(seqId), last = rec.history[rec.history.length - 1], run = rec.run, check = null;
+    if (last) check = { desired: last.desired, startSec: last.startSec, endSec: last.endSec };
+    else if (run && run.done > 0) check = { desired: run.typed.slice(0, run.done), startSec: run.startSec, endSec: run.endSec };
+    var gone = function () {
+      var all = mcRuns(); delete all[seqId]; store("mcRuns", all);
+      if (state.mcSeqId === seqId) state.mcSeqId = null;
+      log("No earlier multicam build is on this timeline any more, so this is a first build (not a recut).");
+      renderMcRow();
+    };
+    if (!check) { if (!run) gone(); return; }
+    callHost("multicamCovering", [JSON.stringify({ startSec: check.startSec, endSec: check.endSec })]).then(function (r) {
+      if (r.sequenceID !== seqId) return;
+      if (r.track === undefined) { gone(); return; }
+      return callHost("countClips", [JSON.stringify({ track: r.track, startSec: check.startSec, endSec: check.endSec })]).then(function (c) {
+        if (!D.multicamBuildPresent(check.desired, c.starts, check.startSec, check.endSec)) gone();
+      });
+    }).catch(function () { /* keep it if we can't tell */ });
+  }
   /** The sequence whose multicam builds apply here: the open one, if it has been built (never another one). */
   function mcSeqId() {
     var cur = state.seq ? state.seq.sequenceID : null;

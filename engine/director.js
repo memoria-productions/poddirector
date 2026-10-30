@@ -1652,6 +1652,19 @@
   }
 
   /**
+   * Is a recorded multicam build still on the track? Its cut points (inside [startSec, endSec)) should be piece
+   * starts there. A Premiere undo, a fresh assembly into the same sequence, or a sequence that shares an ID with
+   * one built before leaves the record without the cuts. Most must be there (a few may have been trimmed by hand).
+   * desired: [{ sec }]. starts: piece starts on the track. -> true / false (true when there's nothing to check).
+   */
+  function multicamBuildPresent(desired, starts, startSec, endSec) {
+    var pts = (desired || []).filter(function (c) { return c.sec > startSec + 0.05 && c.sec < endSec - 0.05; });
+    if (!pts.length) return true;
+    var hit = pts.filter(function (c) { return (starts || []).some(function (s) { return Math.abs(s - c.sec) < 0.06; }); }).length;
+    return hit * 2 >= pts.length;
+  }
+
+  /**
    * The cut as multicam angle changes, for "Build as multicam": one { sec, camera, cameraId } per shot where the
    * angle changes. A camera's angle is its video track + 1 (nesting V1, V2 keeps that order) unless it has its own
    * `angle`. The first shot is included so the cut starts on the right angle (first: true); everything before it
@@ -1743,7 +1756,7 @@
   }
 
   return {
-    VERSION: "0.18.1",
+    VERSION: "0.18.2",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,
@@ -1755,6 +1768,7 @@
     toEditPayload: toEditPayload,
     toMulticamCuts: toMulticamCuts,
     multicamRetype: multicamRetype,
+    multicamBuildPresent: multicamBuildPresent,
     cameraMoves: cameraMoves,
     _internal: { smoothRuns: smoothRuns, calibrate: calibrate, percentile: percentile, shotAt: shotAt }
   };
