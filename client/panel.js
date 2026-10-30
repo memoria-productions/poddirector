@@ -166,6 +166,7 @@
     return p.then(function (info) {
       var changed = !state.seq || state.seq.sequenceID !== info.sequenceID;
       state.seq = expandNests(info);
+      forgetDeletedCopy(info.sequenceID);
       $("seqLabel").textContent = info.name + " · " + info.fps.toFixed(2) + " fps · " + fmt(info.durationSec);
       log("Sequence " + info.name + ": " + info.audioTracks.length + " audio, " + info.videoTracks.filter(function (v) { return !v.virtual; }).length + " video tracks, " + fmt(info.durationSec));
       info.videoTracks.forEach(function (v) {
@@ -1405,6 +1406,17 @@
   // Cut history per original sequence: the copy we built and the last few cuts applied to it.
   function copies() { return load("copies", {}); }
   function copyFor(seq) { return seq ? copies()[seq.sequenceID] || null : null; }
+  /** A copy of this sequence that has since been deleted from the project isn't offered for Recut. */
+  function forgetDeletedCopy(seqId) {
+    var all = copies(), rec = all[seqId];
+    if (!rec || !inPremiere) return;
+    callHost("sequenceExists", [rec.id]).then(function (r) {
+      if (r.exists) return;
+      delete all[seqId]; store("copies", all);
+      log("“" + rec.name + "” isn't in this project any more, so Recut is off until you build a new copy.");
+      renderRecut();
+    }, function () { /* keep it if we can't tell */ });
+  }
   function rememberCut(orig, copySeq, payload, stats, replaceHistory) {
     var all = copies(), rec = all[orig.sequenceID];
     if (!rec || rec.id !== copySeq.sequenceID) rec = { id: copySeq.sequenceID, name: copySeq.name, history: [] };
@@ -2157,7 +2169,11 @@
     return rec;
   }
   function saveRecord(id, rec) { var all = mcRuns(); all[id] = rec; store("mcRuns", all); }
-  function mcSeqId() { return state.mcSeqId || (state.seq && mcRuns()[state.seq.sequenceID] ? state.seq.sequenceID : null); }
+  /** The sequence whose multicam builds apply here: the open one, if it has been built (never another one). */
+  function mcSeqId() {
+    var cur = state.seq ? state.seq.sequenceID : null;
+    return cur && (state.mcSeqId === cur || mcRuns()[cur]) ? cur : null;
+  }
 
   function renderMcRow() {
     var btn = $("btnBuildMc"), resume = $("btnResumeMc"), undo = $("btnUndoMc");

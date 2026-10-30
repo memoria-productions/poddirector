@@ -150,6 +150,9 @@ test("recut in place: a second plan applied over the first ends up exactly as th
   }
   assert.ok(fake.video[0]._clips.every((c) => !c.disabled), "bottom camera all enabled");
   assert.equal(call('PD.openSequenceById("nope")').ok, false);
+  // A remembered copy that was deleted from the project is reported gone (the panel then stops offering Recut).
+  assert.equal(call('PD.sequenceExists("' + dup.sequenceID + '")').exists, true);
+  assert.equal(call('PD.sequenceExists("nope")').exists, false);
 });
 
 /** The camera Premiere shows: the top-most enabled clip. */
@@ -240,6 +243,36 @@ test("multicamCovering finds the multicam track for a range; countClips counts t
   const cc = call("PD.countClips(" + q({ track: 0, startSec: 5, endSec: 25 }) + ")");
   assert.equal(cc.clips, 3);
   assert.deepEqual(cc.starts, [0, 10, 20], "the existing edit points, for a recut");
+});
+
+test("multicam angles that are per-camera nests (244_mc of 244_a_cam / 244_b_cam) are followed down to the camera files", () => {
+  const fake = fakePremiere(40, 1);
+  const tick = (s) => ({ ticks: String(Math.round(s * TPS)) });
+  const clipsOf = (list) => Object.assign(list.slice(), { numItems: list.length });
+  const track = (name, c) => ({ name, get clips() { return clipsOf(c); } });
+  const seqOf = (id, name, tracks) => ({ sequenceID: id, name, projectItem: { nodeId: id }, videoTracks: Object.assign(tracks, { numTracks: tracks.length }) });
+  const item = (id, mc) => ({ nodeId: id, isSequence: () => true, isMulticamClip: () => !!mc, getMediaPath: () => "" });
+  // Per-camera nests, as David and PodGrip build them: the camera file starts 3 s in (b_cam) or 1.5 s in (a_cam, on V2,
+  // with a Black Video filler on V3 that has no media).
+  const bCam = seqOf("b", "244_b_cam", [track("V1", [{ name: "wide.mp4", start: tick(3), end: tick(63), inPoint: tick(0), projectItem: { getMediaPath: () => "C:/media/wide.mp4" } }])]);
+  const aCam = seqOf("a", "244_a_cam", [track("V1", []),
+    track("V2", [{ name: "dolly.mp4", start: tick(1.5), end: tick(61.5), inPoint: tick(10), projectItem: { getMediaPath: () => "C:/media/dolly.mp4" } }]),
+    track("V3", [{ name: "Black Video", start: tick(61.5), end: tick(70), inPoint: tick(0), projectItem: { getMediaPath: () => "" } }])]);
+  // The multicam: V1 = b_cam (the wide), V2 = a_cam, each nest from its own 0.
+  const mc = seqOf("mc", "244_mc", [track("V1", [{ name: "244_b_cam", start: tick(0), end: tick(70), inPoint: tick(0), projectItem: item("b") }]),
+    track("V2", [{ name: "244_a_cam", start: tick(0), end: tick(70), inPoint: tick(0), projectItem: item("a") }])]);
+  fake.ctx.app.project.sequences.push(bCam, aCam, mc);
+  // The main edit plays the multicam from 4 s of its time at 0 s.
+  fake.video[0]._clips = [{ name: "244_mc", start: tick(0), end: tick(40), inPoint: tick(4), projectItem: item("mc", true) }];
+  vm.createContext(fake.ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "host", "host.jsx"), "utf8").replace("#target premierepro", ""), fake.ctx);
+  const v1 = JSON.parse(vm.runInContext("PD.getSequenceInfo()", fake.ctx)).videoTracks[0];
+  assert.ok(v1.nest, "multicam found");
+  assert.deepEqual(v1.nest.angles.map((a) => [a.angle, a.name]), [[1, "244_b_cam"], [2, "244_a_cam"]]);
+  // Outer 0 s = multicam 4 s = b_cam 4 s = wide.mp4 1 s in.
+  assert.deepEqual(v1.nest.angles[0].clips, [{ startSec: 0, endSec: 40, inPointSec: 1, mediaPath: "C:/media/wide.mp4", speed: 1 }]);
+  // Outer 0 s = a_cam 4 s = dolly.mp4 10 + 2.5 s in; no Black Video piece.
+  assert.deepEqual(v1.nest.angles[1].clips, [{ startSec: 0, endSec: 40, inPointSec: 12.5, mediaPath: "C:/media/dolly.mp4", speed: 1 }]);
 });
 
 test("a multicam nest's angles are read through and mapped onto the outer timeline", () => {

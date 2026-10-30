@@ -100,6 +100,13 @@
 - **Dolly stays on the last person until it moves** (when there is no Who's in the shot reading), and a follow-cam shot that runs across a change of speaker is checked against whoever has the floor at each moment.
 - **Picture names checked by voice:** a long steady dolly stretch named after someone silent while another person talks is treated as on the talker. A follow-cam shot spanning several speakers is split per speaker, so monologue cutaways measure one person's turn. A brief aside over someone who carries on isn't crosstalk.
 
+## v0.18.1 (added)
+
+- **Multicams whose angles are per-camera nests** (`<ep>_mc` of `<ep>_a_cam` / `<ep>_b_cam`, as PodGrip assembles them) are read down to the camera files. Before, Scan found no angles, so both cameras sat on V1, Build as multicam wasn't offered, and the camera 2 labels didn't apply.
+- **"Recut" only when there's something to recut.**
+  - "Recut multicam" was offered on a newly opened sequence after a build on another one; it now only shows for a sequence that has been built.
+  - A copy deleted from the project is forgotten, so Recut isn't offered for it.
+
 ## v0.18 (added)
 
 - **PodDirector is now PodCutter.** The panel, menu item, installer, update packages and Documents folder all use the new name.

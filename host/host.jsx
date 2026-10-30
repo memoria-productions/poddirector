@@ -139,19 +139,15 @@ var PD = (function () {
     if (!best) return null;
     var angles = [];
     for (var v = 0; v < best.seq.videoTracks.numTracks; v++) {
-      var vt = best.seq.videoTracks[v], mapped = [];
-      for (var c = 0; c < vt.clips.numItems; c++) {
-        var ic = vt.clips[c], icS = sec(ic.start), icE = sec(ic.end), mp = null, speed = 1;
-        try { mp = ic.projectItem ? ic.projectItem.getMediaPath() : null; } catch (e3) { mp = null; }
-        if (!mp) continue;
-        try { if (typeof ic.getSpeed === "function") speed = ic.getSpeed(); } catch (e4) { speed = 1; }
-        for (var w = 0; w < best.windows.length; w++) {
-          var win = best.windows[w], a = Math.max(icS, win.inner), b = Math.min(icE, win.inner + (win.e - win.s));
-          if (b <= a) continue;
-          mapped.push({ startSec: win.s + (a - win.inner), endSec: win.s + (b - win.inner), inPointSec: sec(ic.inPoint) + (a - icS) * speed, mediaPath: mp, speed: speed });
-        }
+      var vt = best.seq.videoTracks[v], mapped = [], angleName = vt.name || ("V" + (v + 1)), nestName = null;
+      for (var w = 0; w < best.windows.length; w++) {
+        var win = best.windows[w];
+        // Outer time = win.s + (inner time − win.inner), over the window's span of the nest.
+        nestName = mediaPieces([vt], win.inner, win.inner + (win.e - win.s), win.s - win.inner, mapped, 0) || nestName;
       }
       if (!mapped.length) continue;
+      // An angle that is itself a nest (David's 244_a_cam / 244_b_cam, as PodGrip builds them) is named after it.
+      if (nestName) angleName = nestName;
       mapped.sort(function (x, y) { return x.startSec - y.startSec; });
       // Pieces split by cuts on the outer track are one continuous clip again for analysis.
       var merged = [mapped[0]];
@@ -161,9 +157,40 @@ var PD = (function () {
             Math.abs(m.inPointSec - (p.inPointSec + (p.endSec - p.startSec) * p.speed)) < 0.05) p.endSec = m.endSec;
         else merged.push(m);
       }
-      angles.push({ angle: v + 1, name: vt.name || ("V" + (v + 1)), clips: merged.slice(0, 2000) });
+      angles.push({ angle: v + 1, name: angleName, clips: merged.slice(0, 2000) });
     }
     return angles.length ? { sequenceID: best.seq.sequenceID, name: best.seq.name, multicam: best.multicam, angles: angles } : null;
+  }
+
+  /**
+   * The media clips the given tracks play between inner times [from, to), following nested sequences down (an
+   * angle that is a per-camera nest holding the camera clips), pushed onto out in outer time (inner + shift).
+   * Returns the name of the first nest it went into, or null.
+   */
+  function mediaPieces(tracks, from, to, shift, out, depth) {
+    var nestName = null;
+    for (var t = 0; t < tracks.length; t++) {
+      var tr = tracks[t];
+      for (var c = 0; c < tr.clips.numItems; c++) {
+        var ic = tr.clips[c], icS = sec(ic.start), icE = sec(ic.end), a = Math.max(icS, from), b = Math.min(icE, to);
+        if (b <= a) continue;
+        var mp = null, speed = 1;
+        try { mp = ic.projectItem ? ic.projectItem.getMediaPath() : null; } catch (e3) { mp = null; }
+        try { if (typeof ic.getSpeed === "function") speed = ic.getSpeed(); } catch (e4) { speed = 1; }
+        if (mp) {
+          out.push({ startSec: a + shift, endSec: b + shift, inPointSec: sec(ic.inPoint) + (a - icS) * speed, mediaPath: mp, speed: speed });
+          continue;
+        }
+        var inner = depth < 3 ? nestedSequenceOf(ic) : null;
+        if (!inner) continue;
+        if (!nestName) nestName = inner.name;
+        // This clip plays the nest from its inPoint: inner-nest time = ic.inPoint + (t − icS).
+        var nin = sec(ic.inPoint), sub = [];
+        for (var k = 0; k < inner.videoTracks.numTracks; k++) sub.push(inner.videoTracks[k]);
+        mediaPieces(sub, nin + (a - icS), nin + (b - icS), shift + icS - nin, out, depth + 1);
+      }
+    }
+    return nestName;
   }
 
   /** The sequence's In/Out marks in seconds; null when a mark isn't set (Premiere reads unset marks as 0 / the end). */
@@ -535,8 +562,14 @@ var PD = (function () {
     return fail("That PodCutter copy no longer exists in this project.");
   }
 
+  /** Is there a sequence with this ID in the open project? (A remembered copy may have been deleted.) */
+  function sequenceExists(id) {
+    for (var i = 0; i < app.project.sequences.numSequences; i++) if (app.project.sequences[i].sequenceID === id) return ok({ exists: true });
+    return ok({ exists: false });
+  }
+
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,
            addMarkers: addMarkers, clearMarkers: clearMarkers, duplicateActive: duplicateActive,
            razorTrack: razorTrack, applyEnables: applyEnables, showTracks: showTracks, multicamAtPlayhead: multicamAtPlayhead,
-           multicamCovering: multicamCovering, countClips: countClips, colorClips: colorClips, selectClips: selectClips, openSequenceById: openSequenceById, setInOut: setInOut };
+           multicamCovering: multicamCovering, countClips: countClips, colorClips: colorClips, selectClips: selectClips, openSequenceById: openSequenceById, sequenceExists: sequenceExists, setInOut: setInOut };
 })();
