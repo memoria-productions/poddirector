@@ -1,10 +1,10 @@
 {
-  "name": "poddirector",
-  "version": "0.17.0",
+  "name": "podcutter",
+  "version": "0.18.0",
   "description": "AutoPod-style multicam podcast editor and transcript cleanup for Adobe Premiere Pro (offline, self-contained).",
   "license": "MIT",
   "private": true,
-  "bin": { "poddirector": "cli/poddirector.js" },
+  "bin": { "podcutter": "cli/podcutter.js" },
   "scripts": {
     "test": "node --test tests/*.test.js",
     "fetch-vendor": "bash scripts/fetch-vendor.sh",

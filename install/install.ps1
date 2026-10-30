@@ -1,15 +1,23 @@
-# PodDirector installer for Windows (per-user, no admin rights needed).
-#   - copies the extension to %APPDATA%\Adobe\CEP\extensions\PodDirector
+# PodCutter installer for Windows (per-user, no admin rights needed).
+#   - copies the extension to %APPDATA%\Adobe\CEP\extensions\PodCutter
 #   - unblocks the bundled ffmpeg / whisper executables (downloaded zips are "blocked" by Windows)
 #   - enables loading unsigned CEP extensions (PlayerDebugMode) for Premiere's CEP runtimes
 param([switch]$Uninstall, [switch]$Silent)  # -Silent: used by the in-panel updater
 
 $ErrorActionPreference = "Stop"
-$name   = "PodDirector"
+$name   = "PodCutter"
 $target = Join-Path $env:APPDATA "Adobe\CEP\extensions\$name"
 $source = Join-Path $PSScriptRoot $name
+# PodCutter was called PodDirector up to 0.17: its old extension folder is removed so the panel isn't listed twice.
+$oldTarget = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodDirector"
 
 function Say($msg, $color = "Gray") { Write-Host $msg -ForegroundColor $color }
+
+function Remove-OldPodDirector {
+  if (-not (Test-Path $oldTarget)) { return }
+  try { Remove-Item $oldTarget -Recurse -Force; Say "Removed the old PodDirector panel ($oldTarget)" Green }
+  catch { Say "Couldn't remove the old PodDirector panel at $oldTarget (Premiere may be using it). Delete that folder after closing Premiere." Yellow }
+}
 
 if (-not $Silent -and (Get-Process -Name "Adobe Premiere Pro" -ErrorAction SilentlyContinue)) {
   Say "Premiere Pro is running. Please save your work and close it, then press Enter to continue." Yellow
@@ -18,27 +26,29 @@ if (-not $Silent -and (Get-Process -Name "Adobe Premiere Pro" -ErrorAction Silen
 
 if ($Uninstall) {
   if (Test-Path $target) { Remove-Item $target -Recurse -Force; Say "Removed $target" Green }
-  else { Say "PodDirector is not installed." }
-  Say "Your presets and transcripts in Documents\PodDirector were left in place."
+  elseif (-not (Test-Path $oldTarget)) { Say "PodCutter is not installed." }
+  Remove-OldPodDirector
+  Say "Your presets and transcripts in Documents\PodCutter (and Documents\PodDirector, from before the rename) were left in place."
   exit 0
 }
 
 if (-not (Test-Path (Join-Path $source "CSXS\manifest.xml"))) {
   if (Test-Path (Join-Path $PSScriptRoot "..\CSXS\manifest.xml")) {
-    Say "This is the PodDirector *source code*, not the installer package." Red
-    Say "Download PodDirector-x.y.z-Windows.zip from the Assets list on:" Yellow
+    Say "This is the PodCutter *source code*, not the installer package." Red
+    Say "Download PodCutter-x.y.z-Windows.zip from the Assets list on:" Yellow
     Say "  https://github.com/memoria-productions/poddirector/releases/latest" Yellow
   } else {
-    Say "Can't find the PodDirector folder next to this installer ($source)." Red
+    Say "Can't find the PodCutter folder next to this installer ($source)." Red
   }
   exit 1
 }
 
-Say "Installing PodDirector to $target ..." Cyan
+Say "Installing PodCutter to $target ..." Cyan
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 # Mirror the folder (removes files from older versions).
 robocopy $source $target /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { Say "Copy failed (robocopy code $LASTEXITCODE)." Red; exit 1 }
+Remove-OldPodDirector
 
 Get-ChildItem -Path $target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 
@@ -55,4 +65,4 @@ try { & $ff -hide_banner -version | Select-Object -First 1 | Out-Null; Say "  ff
 if (Test-Path $wh) { Say "  transcriber ... OK" Green } else { Say "  transcriber ... missing" Yellow }
 
 Say ""
-Say "Done! Start Premiere Pro, then open:  Window > Extensions > PodDirector" Green
+Say "Done! Start Premiere Pro, then open:  Window > Extensions > PodCutter" Green

@@ -1,5 +1,5 @@
 /*
- * PodDirector — waveform analyzer.
+ * PodCutter — waveform analyzer.
  *
  * Turns the audio clips on a Premiere audio track into one continuous loudness
  * curve (dB per hop, in sequence time). Uses ffmpeg to decode the *source*

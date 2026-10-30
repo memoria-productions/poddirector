@@ -1,5 +1,5 @@
 /*
- * PodDirector — transcript analyzer.
+ * PodCutter — transcript analyzer.
  *
  * Finds sections the hosts meant to cut: spoken edit cues ("cut that",
  * "scratch that", "let me start over", "we'll fix it in post"), off-the-record

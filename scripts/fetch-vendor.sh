@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download the third-party runtimes PodDirector bundles for Windows (not kept in git).
+# Download the third-party runtimes PodCutter bundles for Windows (not kept in git).
 #   ffmpeg (LGPL build, BtbN) · whisper.cpp v1.9.1 CLI · Whisper base.en model · Silero VAD model
 # Set MODEL=small.en for better accuracy (466 MB) or tiny.en for speed (75 MB).
 set -euo pipefail

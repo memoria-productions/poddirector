@@ -1,4 +1,4 @@
-# PodDirector roadmap
+# PodCutter roadmap
 
 ## Now (v0.1, Windows)
 
@@ -51,7 +51,7 @@
 ## v0.8 (added)
 
 - **Introduction:** finds the welcome, the host and everyone introduced in the transcript; the cut opens on the host's solo cam, then the wide for the introductions; lower-third name markers with editable name-tag text.
-- **Reload instead of restart:** after an update, Reload PodDirector loads the new version in place; Premiere only needs restarting when the manifest changed.
+- **Reload instead of restart:** after an update, Reload PodCutter loads the new version in place; Premiere only needs restarting when the manifest changed.
 
 - **Hidden camera tracks (v0.8.1):** Build and Recut turn on track output (the eye) for the camera tracks they cut; the scan notes hidden ones.
 
@@ -100,10 +100,18 @@
 - **Dolly stays on the last person until it moves** (when there is no Who's in the shot reading), and a follow-cam shot that runs across a change of speaker is checked against whoever has the floor at each moment.
 - **Picture names checked by voice:** a long steady dolly stretch named after someone silent while another person talks is treated as on the talker. A follow-cam shot spanning several speakers is split per speaker, so monologue cutaways measure one person's turn. A brief aside over someone who carries on isn't crosstalk.
 
+## v0.18 (added)
+
+- **PodDirector is now PodCutter.** The panel, menu item, installer, update packages and Documents folder all use the new name.
+  - The first time it opens, the panel copies your presets, setups, transcripts and exports from `Documents\PodDirector` to `Documents\PodCutter`. The old folder is left as it was.
+  - Installing (or updating) removes the old PodDirector panel folder.
+  - Updating from an installed PodDirector works as usual: each release also carries the package under its old name. That update needs a Premiere restart.
+  - Not renamed, so nothing is lost: the extension ID, the panel's saved settings, `[PD]` marker names (Clear markers still finds old ones) and earlier "… - PodDirector" sequence copies, which Recut still finds by their ID.
+- **Wide + dolly handoffs** retuned with the dolly footage of 36 past episodes (tools/analyze_past.js, mapped through each edit's multicam to the camera files): wides 9 s minimum (was 12), solo 4.5 s in, back to the dolly 1.5 s after a move. With motion and framing it matches David's camera choice 79% of the time, at 48% wide (David 44%), cutting to the solo 4.6 s into a turn (David 4.6 s), and shows the dolly mid-move 0.1% of the solo time (David 0.1%; 1.7% without motion readings).
+
 ## v0.17 (added)
 
 - **Wide + dolly handoffs** mode, learned by lining up 35 finished Classical et cetera edits (tools/prproj.js) with the mic audio. Wide around each change of speaker (from 1.5 s before), the new speaker's solo 5 s in, short turns on the wide, long shots. On audio-only replays it matches David's camera choice 78% of the time (Roundtable: 47%). New settings: Solo after, Wide before handoff.
-- Next: dolly motion for past episodes, so the tuning also sees the operator's moves.
 
 ## v0.16.1 (added)
 

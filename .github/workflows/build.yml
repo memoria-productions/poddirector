@@ -34,7 +34,7 @@ jobs:
       - run: bash scripts/package-windows.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: PodDirector-Windows
+          name: PodCutter-Windows
           path: dist/*.zip
           retention-days: 14
 
@@ -48,21 +48,27 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: actions/download-artifact@v4
-        with: { name: PodDirector-Windows, path: dist }
+        with: { name: PodCutter-Windows, path: dist }
       - name: Install with the user-facing installer
         shell: pwsh
         run: |
-          Expand-Archive dist/*.zip -DestinationPath build
+          # A panel installed before the rename: the installer must replace it.
+          $old = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodDirector\CSXS"
+          New-Item -ItemType Directory -Force -Path $old | Out-Null
+          Set-Content (Join-Path $old "manifest.xml") "<old/>"
+          Expand-Archive (Get-Item dist/PodCutter-*-Windows.zip).FullName -DestinationPath build
           $setup = Get-ChildItem build -Directory | Select-Object -First 1
           & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $setup.FullName "install.ps1")
-          $ext = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodDirector"
+          $ext = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodCutter"
           if (-not (Test-Path "$ext\CSXS\manifest.xml")) { throw "extension not installed" }
+          if (Test-Path (Join-Path $env:APPDATA "Adobe\CEP\extensions\PodDirector")) { throw "old PodDirector panel not removed" }
+          if (-not (Test-Path dist/PodDirector-*-Windows.zip)) { throw "no PodDirector-named package for pre-rename updaters" }
           if ((Get-ItemProperty "HKCU:\Software\Adobe\CSXS.11").PlayerDebugMode -ne "1") { throw "PlayerDebugMode not set" }
       - name: Waveform analysis + offline transcription with the bundled Windows binaries
         shell: pwsh
         run: |
           Invoke-WebRequest https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.1/samples/jfk.wav -OutFile jfk.wav
-          $env:PD_EXT = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodDirector"
+          $env:PD_EXT = Join-Path $env:APPDATA "Adobe\CEP\extensions\PodCutter"
           node scripts/smoke-test.js jfk.wav
       - name: In-panel updater installs a package from an update folder
         shell: pwsh
@@ -78,11 +84,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { name: PodDirector-Windows, path: dist }
+        with: { name: PodCutter-Windows, path: dist }
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/*.zip \
-            --title "PodDirector $GITHUB_REF_NAME" \
-            --notes "Windows installer: download the zip, unzip, double-click **Install PodDirector.bat**, then open Window > Extensions > PodDirector in Premiere Pro. See docs/USER_GUIDE.md."
+            --title "PodCutter $GITHUB_REF_NAME" \
+            --notes "Windows installer: download PodCutter-*-Windows.zip, unzip, double-click **Install PodCutter.bat**, then open Window > Extensions > PodCutter in Premiere Pro. See docs/USER_GUIDE.md. (PodCutter was called PodDirector: the PodDirector-*.zip is the same package, for panels installed before the rename to update from.)"

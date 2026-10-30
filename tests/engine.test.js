@@ -272,12 +272,25 @@ test("presets produce progressively busier edits", () => {
 test("updater picks the newest package in an update folder", async () => {
   const U = require("../engine/updater.js"), fs = require("fs"), os = require("os"), path = require("path");
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "pd-upd-"));
-  ["PodDirector-0.2.0-Windows.zip", "PodDirector-0.10.0-Windows.zip", "PodDirector-0.9.3-Windows.zip", "notes.txt"].forEach((f) => fs.writeFileSync(path.join(d, f), ""));
+  ["PodCutter-0.2.0-Windows.zip", "PodCutter-0.10.0-Windows.zip", "PodCutter-0.9.3-Windows.zip", "notes.txt"].forEach((f) => fs.writeFileSync(path.join(d, f), ""));
   const r = await U.check({ current: "0.2.0", folder: d, github: false });
   assert.equal(r.latest.version, "0.10.0");
   assert.equal(r.newer, true);
   assert.equal((await U.check({ current: "0.10.0", folder: d, github: false })).newer, false);
   assert.equal(U.compare("v1.2.10", "1.2.9"), 1);
+});
+
+test("updater reads packages under the old PodDirector name too, preferring PodCutter's at the same version", async () => {
+  const U = require("../engine/updater.js"), fs = require("fs"), os = require("os"), path = require("path");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pd-upd-"));
+  ["PodDirector-0.17.0-Windows.zip", "PodDirector-0.18.0-Windows.zip", "PodCutter-0.18.0-Windows.zip"].forEach((f) => fs.writeFileSync(path.join(d, f), ""));
+  const r = await U.check({ current: "0.17.0", folder: d, github: false });
+  assert.equal(r.latest.version, "0.18.0");
+  assert.equal(path.basename(r.latest.file), "PodCutter-0.18.0-Windows.zip");
+  // Old name only (a folder set up before the rename)
+  const o = fs.mkdtempSync(path.join(os.tmpdir(), "pd-upd-"));
+  fs.writeFileSync(path.join(o, "PodDirector-0.18.0-Windows.zip"), "");
+  assert.equal((await U.check({ current: "0.17.0", folder: o, github: false })).latest.version, "0.18.0");
 });
 
 test("planRange cuts only between the In and Out marks", () => {

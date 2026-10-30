@@ -1,5 +1,5 @@
 /*
- * PodDirector — multicam by keystrokes (experimental, Windows).
+ * PodCutter — multicam by keystrokes (experimental, Windows).
  *
  * Premiere has no scripting call to switch a multicam angle, but its "Cut to Camera N" command does it from the
  * keyboard: with the playhead parked on a multicam clip it cuts there and switches to camera N. This module reads

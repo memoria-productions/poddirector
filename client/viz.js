@@ -185,7 +185,7 @@
       ctx.fillStyle = "rgba(239,93,93,.18)"; ctx.fillRect(xa, RULER, xb - xa, H - RULER - 8);
       ctx.fillStyle = "rgba(239,93,93,.9)"; ctx.fillRect(xa, H - 8, Math.max(1, xb - xa), 6);
     });
-    // outside the In/Out range: untouched by PodDirector
+    // outside the In/Out range: untouched by PodCutter
     if (d.range) {
       ctx.fillStyle = "rgba(10,10,10,.62)";
       var ra = this.xAt(d.range.a), rb = this.xAt(d.range.b);

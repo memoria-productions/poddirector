@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * PodDirector — read finished edits straight from Premiere project files (.prproj), no Premiere needed.
+ * PodCutter — read finished edits straight from Premiere project files (.prproj), no Premiere needed.
  *
  * A .prproj is gzipped XML: a flat list of objects (sequences, tracks, track items, clips, media) that point at
  * each other by ObjectID / ObjectUID. This walks sequence -> track group -> track -> track item -> subclip -> clip

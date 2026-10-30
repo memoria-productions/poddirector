@@ -1,5 +1,5 @@
 /*
- * PodDirector — camera motion analyzer.
+ * PodCutter — camera motion analyzer.
  *
  * Measures how much the *camera* moves (pan, tilt, dolly/push, zoom, shake),
  * not how much the people in frame move. Video is decoded by ffmpeg to tiny

@@ -1,11 +1,11 @@
 # Third-party notices
 
-PodDirector bundles or adapts the following works.
+PodCutter bundles or adapts the following works.
 
 ## FFmpeg (bundled binary: vendor/ffmpeg/…/ffmpeg.exe)
 Licensed under the GNU Lesser General Public License v2.1 or later (LGPL build from https://github.com/BtbN/FFmpeg-Builds).
 See vendor/ffmpeg/win32-x64/LICENSE.txt. Source code: https://ffmpeg.org/download.html and https://github.com/BtbN/FFmpeg-Builds.
-PodDirector runs ffmpeg as a separate program and does not link to it; you may replace the binary with your own build (Settings > Custom ffmpeg path).
+PodCutter runs ffmpeg as a separate program and does not link to it; you may replace the binary with your own build (Settings > Custom ffmpeg path).
 
 ## whisper.cpp (bundled binaries: vendor/whisper/…)
 MIT License, Copyright (c) 2023-2026 The ggml authors. https://github.com/ggml-org/whisper.cpp

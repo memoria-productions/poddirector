@@ -1,4 +1,4 @@
-/* Minimal CSInterface shim: the few calls PodDirector needs from Adobe's CEP runtime. */
+/* Minimal CSInterface shim: the few calls PodCutter needs from Adobe's CEP runtime. */
 function CSInterface() {}
 CSInterface.prototype.evalScript = function (script, cb) {
   cb = cb || function () {};

@@ -65,7 +65,7 @@ window.PD_UI = {
       { key: "fastMinPct", label: "Big move above", min: 2, max: 30, step: 0.5, unit: "%/s",
         help: "Motion over this is a reposition or whip: always cut away from it." },
       { key: "settleSec", label: "Settle time", min: 0, max: 3, step: 0.1, unit: "s",
-        help: "The camera must have been steady this long before PodDirector cuts to it." },
+        help: "The camera must have been steady this long before PodCutter cuts to it." },
       { key: "guessFraming", label: "Who it's on", type: "select",
         options: [["true", "Whoever it settled on"], ["false", "Whoever is talking"]],
         help: "Without a Who's in the shot reading: an operated camera stays on the person it settled on until it moves again, so when someone else starts talking it's the wide until the operator swings round. \"Whoever is talking\" trusts the operator to always be on the speaker." },

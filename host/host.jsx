@@ -1,5 +1,5 @@
 /*
- * PodDirector — ExtendScript host (runs inside Premiere Pro).
+ * PodCutter — ExtendScript host (runs inside Premiere Pro).
  *
  * Everything returns a JSON string: { ok: true, ... } or { ok: false, error }.
  * Sequence reading / duplication approach adapted from Podclip (MIT).
@@ -270,7 +270,7 @@ var PD = (function () {
       if (!before[s.sequenceID]) { copy = s; break; }
     }
     if (!copy) return fail("Premiere did not create the duplicate.");
-    try { copy.name = seq.name + (suffix || " - PodDirector"); } catch (en) { /* name is cosmetic */ }
+    try { copy.name = seq.name + (suffix || " - PodCutter"); } catch (en) { /* name is cosmetic */ }
     app.project.openSequence(copy.sequenceID);
     return ok({ sequenceID: copy.sequenceID, name: copy.name, originalName: seq.name });
   }
@@ -295,7 +295,7 @@ var PD = (function () {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
     var p = JSON.parse(json);
-    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodDirector copy is not the active sequence.");
+    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodCutter copy is not the active sequence.");
     app.enableQE();
     var q = qe.project.getActiveSequence();
     var qt = q.getVideoTrackAt(p.track);
@@ -322,7 +322,7 @@ var PD = (function () {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
     var p = JSON.parse(json);
-    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodDirector copy is not the active sequence.");
+    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodCutter copy is not the active sequence.");
     var tpf = parseFloat(seq.timebase), shots = p.shots, toggled = 0;
     function shotAt(frame) {
       var lo = 0, hi = shots.length - 1;
@@ -513,7 +513,7 @@ var PD = (function () {
     var seq = seqOrFail();
     if (!seq) return fail("No active sequence.");
     var p = JSON.parse(json);
-    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodDirector copy is not the active sequence.");
+    if (p.sequenceID && seq.sequenceID !== p.sequenceID) return fail("Refusing to edit: the PodCutter copy is not the active sequence.");
     var shown = [];
     for (var i = 0; i < p.tracks.length; i++) {
       var vt = seq.videoTracks[p.tracks[i]];
@@ -523,7 +523,7 @@ var PD = (function () {
     return ok({ shown: shown });
   }
 
-  /** Open a sequence by ID (used to recut an earlier PodDirector copy). */
+  /** Open a sequence by ID (used to recut an earlier PodCutter copy). */
   function openSequenceById(id) {
     for (var i = 0; i < app.project.sequences.numSequences; i++) {
       var s = app.project.sequences[i];
@@ -532,7 +532,7 @@ var PD = (function () {
         return ok({ sequenceID: id, name: s.name });
       }
     }
-    return fail("That PodDirector copy no longer exists in this project.");
+    return fail("That PodCutter copy no longer exists in this project.");
   }
 
   return { ping: ping, getSequenceInfo: getSequenceInfo, getPlayhead: getPlayhead, setPlayhead: setPlayhead,

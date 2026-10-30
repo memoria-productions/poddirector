@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /*
- * PodDirector — batch camera-motion analysis for past episodes (meant to run unattended, e.g. over a weekend).
+ * PodCutter — batch camera-motion analysis for past episodes (meant to run unattended, e.g. over a weekend).
  *
  * For every finished edit found by tools/prproj.js, takes the camera files behind each non-wide multicam angle (the
- * operated / solo cameras), and runs PodDirector's motion analyzer over each whole file: motion per 1/6 s plus a
+ * operated / solo cameras), and runs PodCutter's motion analyzer over each whole file: motion per 1/6 s plus a
  * 32x18 thumbnail per second, saved next to a manifest. Resumable: files already done are skipped, so it can be
  * stopped and started again. Keeps the PC awake while it runs. Read-only on the footage and projects.
  *
@@ -47,7 +47,7 @@ function buildQueue() {
       if (angle === sum.wideAngle) return;
       const files = [];
       t.items.forEach((it) => filesOf(p, it, 0, files));
-      files.forEach((media) => queue.push({ ep, edit: sum.edit, project: f, angle, media }));
+      files.forEach((media) => { if (!queue.some((q) => q.media === media)) queue.push({ ep, edit: sum.edit, project: f, angle, media }); });
     });
   });
   // Newest episodes first.

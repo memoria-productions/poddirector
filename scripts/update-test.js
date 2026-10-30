@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CI: exercise the in-panel updater on Windows: find the package in a folder and install it silently.
-//   node scripts/update-test.js <folder-with-PodDirector-x.y.z-Windows.zip>
+//   node scripts/update-test.js <folder-with-PodCutter-x.y.z-Windows.zip>
 "use strict";
 const path = require("path"), fs = require("fs");
 const U = require(path.join(__dirname, "..", "engine", "updater.js"));
@@ -10,7 +10,7 @@ const D = require(path.join(__dirname, "..", "engine", "director.js"));
   if (!r.newer || r.latest.version !== D.VERSION) throw new Error("expected to find " + D.VERSION + ", got " + JSON.stringify(r));
   const t0 = Date.now();
   const res = await U.install(r.latest, (stage) => console.log("  " + stage));
-  const ext = path.join(process.env.APPDATA, "Adobe", "CEP", "extensions", "PodDirector", "engine", "director.js");
+  const ext = path.join(process.env.APPDATA, "Adobe", "CEP", "extensions", "PodCutter", "engine", "director.js");
   const installed = fs.readFileSync(ext, "utf8").match(/VERSION: "([^"]+)"/)[1];
   console.log("installed " + res.version + " in " + ((Date.now() - t0) / 1000).toFixed(1) + "s; extension reports " + installed);
   if (installed !== D.VERSION) throw new Error("installed version mismatch");

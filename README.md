@@ -1,4 +1,4 @@
-# PodDirector
+# PodCutter
 
 An open, offline, AutoPod-style multicam editor for Adobe Premiere Pro, plus transcript-based cleanup.
 
@@ -19,7 +19,7 @@ engine/analyzer.js       ffmpeg -> per-track loudness curves (dB/25 ms), disk-ca
 engine/motion.js         ffmpeg -> camera-motion curves (pan/tilt/dolly/zoom, subject motion rejected)
 engine/transcriber.js    Timeline mix -> whisper.cpp (word timestamps + Silero VAD)
 engine/transcript.js     Transcript parsing + cut-cue / restart / off-record detection
-cli/poddirector.js       Offline tuning: plan / compare presets / cleanup
+cli/podcutter.js       Offline tuning: plan / compare presets / cleanup
 tests/                   node:test suites (engine, analyzer+ffmpeg, transcript)
 install/                 Windows installer (per-user, sets PlayerDebugMode)
 scripts/                 fetch-vendor.sh, package-windows.sh
@@ -45,15 +45,15 @@ vendor/                  (not in git) bundled ffmpeg / whisper / models
 ```bash
 npm test                                   # 30 tests; media tests need ffmpeg on PATH
 open client/index.html                     # panel runs in a browser in demo mode
-node cli/poddirector.js presets
-node cli/poddirector.js plan "Episode.poddirector.json" --compare calm,balanced,lively
-node cli/poddirector.js plan "Episode.poddirector.json" --preset lively --set minShotSec=2.5 --set biasDb.Host=3 --out tuned.json
-node cli/poddirector.js cleanup transcript.srt --csv cuts.csv
+node cli/podcutter.js presets
+node cli/podcutter.js plan "Episode.podcutter.json" --compare calm,balanced,lively
+node cli/podcutter.js plan "Episode.podcutter.json" --preset lively --set minShotSec=2.5 --set biasDb.Host=3 --out tuned.json
+node cli/podcutter.js cleanup transcript.srt --csv cuts.csv
 bash scripts/fetch-vendor.sh               # MODEL=small.en for higher accuracy
-bash scripts/package-windows.sh            # -> dist/PodDirector-x.y.z-Windows.zip
+bash scripts/package-windows.sh            # -> dist/PodCutter-x.y.z-Windows.zip
 ```
 
-Load the unpacked extension during development by copying (or symlinking) this folder into `%APPDATA%\Adobe\CEP\extensions\PodDirector` and running `install.ps1` once to enable `PlayerDebugMode`.
+Load the unpacked extension during development by copying (or symlinking) this folder into `%APPDATA%\Adobe\CEP\extensions\PodCutter` and running `install.ps1` once to enable `PlayerDebugMode`.
 
 ## Releases (GitHub Actions)
 
@@ -67,6 +67,6 @@ Share this link for the newest installer: https://github.com/memoria-productions
 
 ## Tuning with Claude
 
-In the panel, click **Export analysis for Claude**. That writes `Documents\PodDirector\<sequence>.poddirector.json`, which contains downsampled mic curves, your config, calibration, stats, and the shot list. Claude can run the CLI against that file to compare styles, then write a tuned config that you load back in with **Settings → Import settings JSON**.
+In the panel, click **Export analysis for Claude**. That writes `Documents\PodCutter\<sequence>.podcutter.json`, which contains downsampled mic curves, your config, calibration, stats, and the shot list. Claude can run the CLI against that file to compare styles, then write a tuned config that you load back in with **Settings → Import settings JSON**.
 
 MIT licensed. See THIRD_PARTY_NOTICES.md for bundled components and credits (Podclip, Cutcast).

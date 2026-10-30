@@ -1,5 +1,5 @@
 /*
- * PodDirector — multicam cutting engine.
+ * PodCutter — multicam cutting engine.
  *
  * Pure JavaScript, no dependencies. Runs in the Premiere CEP panel, in Node
  * (CLI + tests) and anywhere else. Given one loudness curve (dB over time) per
@@ -25,8 +25,8 @@
   // CEP panels with Node enabled define both window and module: export to both.
   var api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (typeof window !== "undefined") window.PodDirector = api;
-  else if (root) root.PodDirector = api;
+  if (typeof window !== "undefined") window.PodCutter = api;
+  else if (root) root.PodCutter = api;
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
@@ -148,9 +148,9 @@
     },
     handoff: {
       label: "Wide + dolly handoffs",
-      description: "Learned from 35 finished Classical et cetera edits: the wide around each change of speaker, the new speaker's solo once they've settled in, short turns on the wide, long unhurried shots. For a static wide plus an operated camera.",
+      description: "Learned from 35 finished Classical et cetera edits and their dolly footage: the wide around each change of speaker, the new speaker's solo once they've settled in, short turns on the wide, long unhurried shots. For a static wide plus an operated camera.",
       needs: "wide",
-      style: { soloAfterSec: 5, wideLeadSec: 1.5, crosstalkMinSec: 3, minWideSec: 12, minShotSec: 8,
+      style: { soloAfterSec: 4.5, wideLeadSec: 1.5, crosstalkMinSec: 3, minWideSec: 9, minShotSec: 8, comeBackSec: 1.5,
                interjectionMode: "reaction", interjectionChance: 0, groupReactWide: true, maxShotSec: 0 }
     },
     social: {
@@ -1743,7 +1743,7 @@
   }
 
   return {
-    VERSION: "0.17.0",
+    VERSION: "0.18.0",
     DEFAULT_STYLE: DEFAULT_STYLE,
     DEFAULT_SPEAKER: DEFAULT_SPEAKER,
     PRESETS: PRESETS,

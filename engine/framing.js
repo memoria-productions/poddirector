@@ -1,5 +1,5 @@
 /*
- * PodDirector — "who's in the shot" for operated cameras.
+ * PodCutter — "who's in the shot" for operated cameras.
  *
  * An operated dolly / follow camera isn't always on the person talking: the operator may hold on a listener,
  * or be late moving to a new speaker. This module splits the camera's footage into steady stretches (between

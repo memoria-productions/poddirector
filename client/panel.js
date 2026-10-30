@@ -1,11 +1,11 @@
-/* PodDirector panel controller. */
+/* PodCutter panel controller. */
 (function () {
   "use strict";
 
   var cs = new CSInterface();
   var inPremiere = !!window.__adobe_cep__;
   var hasNode = typeof require === "function" && typeof process !== "undefined";
-  var D = window.PodDirector, T = window.PodTranscript, A = window.PodAnalyzer, W = window.PodTranscriber, UI = window.PD_UI;
+  var D = window.PodCutter, T = window.PodTranscript, A = window.PodAnalyzer, W = window.PodTranscriber, UI = window.PD_UI;
   var fs = hasNode ? require("fs") : null, path = hasNode ? require("path") : null, os = hasNode ? require("os") : null;
   var MARK_CAM = "[PD] ", MARK_CUT = "[PD cut] ", MARK_NAME = "[PD name] ", MARK_MOVE = "[PD move] ", MARK_INTRO = "[PD intro] ";
   var HOP = 0.025;
@@ -42,7 +42,7 @@
   function log(msg) {
     var line = new Date().toLocaleTimeString() + "  " + msg;
     var pre = $("log"); pre.textContent += line + "\n"; pre.scrollTop = pre.scrollHeight;
-    if (window.console) console.log("[PodDirector] " + msg);
+    if (window.console) console.log("[PodCutter] " + msg);
   }
   function status(text, kind, pct) {
     var s = $("statusText"); s.textContent = text; s.className = kind || "";
@@ -50,6 +50,29 @@
     if (kind === "err") log("ERROR: " + text);
   }
   function fmt(t) { return T.formatTime(t); }
+  /**
+   * PodCutter was called PodDirector up to 0.17. The first time, copy the old Documents\PodDirector folder's
+   * presets, setups, transcripts and exports to Documents\PodCutter. The old folder is left as it was; big data
+   * folders kept there by other tools (edits, motion) aren't the panel's and aren't copied.
+   */
+  function migrateDocs(from, to) {
+    var SKIP = { edits: 1, motion: 1, compare: 1 };
+    function copy(a, b, top) {
+      fs.mkdirSync(b, { recursive: true });
+      fs.readdirSync(a).forEach(function (f) {
+        if (top && SKIP[f.toLowerCase()]) return;
+        var s = path.join(a, f), d = path.join(b, f);
+        if (fs.statSync(s).isDirectory()) copy(s, d, false);
+        else if (!fs.existsSync(d)) fs.writeFileSync(d, fs.readFileSync(s));
+      });
+    }
+    try {
+      if (fs.existsSync(to) || !fs.existsSync(from)) return;
+      copy(from, to, true);
+      log("Copied your presets, setups and transcripts from " + from + " (PodCutter used to be called PodDirector).");
+    } catch (e) { log("Couldn't copy your old PodDirector settings from " + from + ": " + e.message); }
+  }
+
   function store(key, val) { try { localStorage.setItem("pd." + key, JSON.stringify(val)); } catch (e) { /* ignore */ } }
   function load(key, def) { try { var v = localStorage.getItem("pd." + key); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
   var timers = {};
@@ -70,7 +93,7 @@
   }
   function guard(fn) {
     return function () {
-      if (state.busy) { status("PodDirector is still busy with the last job — wait for it to finish (see the status line and the Log), then try again.", "err"); return; }
+      if (state.busy) { status("PodCutter is still busy with the last job — wait for it to finish (see the status line and the Log), then try again.", "err"); return; }
       var args = arguments;
       state.busy = true; setButtons();
       Promise.resolve().then(function () { return fn.apply(null, args); })
@@ -87,7 +110,8 @@
       var docs = inPremiere && cs.getUserDocuments();
       // Only trust a real, existing absolute folder; otherwise use the usual Documents folder.
       try { if (!docs || !path.isAbsolute(docs) || !fs.statSync(docs).isDirectory()) docs = null; } catch (e) { docs = null; }
-      state.docsDir = path.join(docs || path.join(os.homedir(), "Documents"), "PodDirector");
+      state.docsDir = path.join(docs || path.join(os.homedir(), "Documents"), "PodCutter");
+      migrateDocs(path.join(path.dirname(state.docsDir), "PodDirector"), state.docsDir);
       try { fs.mkdirSync(path.join(state.docsDir, "presets"), { recursive: true }); } catch (e) { /* ignore */ }
       $("docsDir").textContent = state.docsDir;
     }
@@ -172,7 +196,7 @@
       })) {
         useNestAngles();
         setNote("Your cameras now sit inside the multicam nest on V" + (nestAngleTracks()[0].nestTrack + 1) +
-          ", so PodDirector reads them there: " + state.config.cameras.filter(function (c) { return c.angle; }).map(function (c) { return c.name + " = angle " + c.angle; }).join(", ") + ".");
+          ", so PodCutter reads them there: " + state.config.cameras.filter(function (c) { return c.angle; }).map(function (c) { return c.name + " = angle " + c.angle; }).join(", ") + ".");
         log("Cameras switched to the nest's angles (their stacked tracks were empty).");
       }
       var fixedN = fixChannels(state.config, info);
@@ -662,7 +686,7 @@
         select(trackOptions("video"), cm.videoTrack, function (v) { cm.videoTrack = +v; changed(); }),
         el("span", { class: "muted small", text: role }),
         trashButton("Remove this camera", function () {
-          confirmBox(row, "Remove camera \u201C" + cm.name + "\u201D? PodDirector won't cut to it.", "Remove", function () {
+          confirmBox(row, "Remove camera \u201C" + cm.name + "\u201D? PodCutter won't cut to it.", "Remove", function () {
             state.config.cameras = state.config.cameras.filter(function (x) { return x !== cm; });
             renderCameras(); renderStyle(); changed();
           });
@@ -681,7 +705,7 @@
       chips.appendChild(chip("Follows speaker", !!cm.follows, function (on) { cm.follows = on; if (on) cm.static = false; renderCameras(); renderStyle(); changed(); },
         "An operator re-frames this camera on whoever is talking: it can show any speaker (never a group or a listener)."));
       chips.appendChild(chip("Check for movement", !!cm.moving, function (on) { cm.moving = on; renderCameras(); renderStyle(); changed(); },
-        "On for a dolly, slider, handheld or operated camera: PodDirector reads its picture and only cuts to it when it's steady. Leave off for locked-off cameras like a static wide (faster analysis, never held back)."));
+        "On for a dolly, slider, handheld or operated camera: PodCutter reads its picture and only cuts to it when it's steady. Leave off for locked-off cameras like a static wide (faster analysis, never held back)."));
       chips.appendChild(chip("Enabled", cm.enabled !== false, function (on) { cm.enabled = on; renderModeNote(); changed(); }));
       var stab = state.result && state.result.stability && state.result.stability[cm.id];
       if (cm.moving && stab && stab.noFootage) {
@@ -1347,7 +1371,7 @@
     var n = 0;
     return callHost("clearMarkers", [MARK_CAM]).then(function (r) { n += r.removed; return callHost("clearMarkers", [MARK_MOVE]); })
       .then(function (r) { n += r.removed; return callHost("clearMarkers", [MARK_INTRO]); })
-      .then(function (r) { n += r.removed; status("Removed " + n + " PodDirector markers.", "ok"); });
+      .then(function (r) { n += r.removed; status("Removed " + n + " PodCutter markers.", "ok"); });
   });
 
   /**
@@ -1363,7 +1387,7 @@
     cams.forEach(function (c) {
       D.cameraMoves(state.result, c.id).forEach(function (m) {
         markers.push({ startSec: m.startSec, endSec: m.endSec, color: m.kind === "big" ? 1 : 3, name: c.name + (m.kind === "big" ? " moving" : " drifting"),
-          comment: (m.kind === "big" ? "Big move" : "Slow move") + " on " + c.name + ", " + fmt(m.startSec) + "–" + fmt(m.endSec) + ". PodDirector keeps this camera off air here." });
+          comment: (m.kind === "big" ? "Big move" : "Slow move") + " on " + c.name + ", " + fmt(m.startSec) + "–" + fmt(m.endSec) + ". PodCutter keeps this camera off air here." });
       });
     });
     if (!inPremiere) { status(markers.length + " camera moves found (markers need Premiere).", "ok"); return; }
@@ -1457,7 +1481,7 @@
   /**
    * Label the camera 2 pieces. reset { within: [a, b], color }: on a recut/undo, pieces that are no longer camera 2
    * get their original label back. With a keystroke sender (a multicam build, Timeline focused) and an Edit > Label
-   * shortcut, PodDirector selects the pieces and presses it, which works where scripts can't set the label.
+   * shortcut, PodCutter selects the pieces and presses it, which works where scripts can't set the label.
    */
   /** Under the colour picker: the shortcut a multicam build will press, or how to give it one. */
   function renderLabelKey() {
@@ -1487,7 +1511,7 @@
     var name = labelName(labelColor()), colored = 0;
     function press(sel, k, what) {
       return callHostWithin(20000, "selectClips", [JSON.stringify(sel)]).then(function (r) {
-        if (r.unsupported) throw new Error("Premiere wouldn't let PodDirector select clips" + (r.error ? " (" + r.error + ")" : ""));
+        if (r.unsupported) throw new Error("Premiere wouldn't let PodCutter select clips" + (r.error ? " (" + r.error + ")" : ""));
         if (!r.selected) return 0;
         return wait(kbdPause()).then(function () { return sender.send(k.usable); }).then(function (reply) {
           step("label " + what + ": " + r.selected + " pieces, " + k.label + " → " + reply);
@@ -1533,7 +1557,7 @@
     if (!state.result) return;
     var payload = currentPayload(), orig = state.seq, newSeq;
     status("Duplicating the sequence\u2026", "", 0.02);
-    return callHost("duplicateActive", [orig.sequenceID, " - PodDirector"]).then(function (r) {
+    return callHost("duplicateActive", [orig.sequenceID, " - PodCutter"]).then(function (r) {
       newSeq = r; log("Created " + r.name);
       return writeCut(newSeq.sequenceID, payload, "Cutting");
     }).then(function (r) {
@@ -1607,7 +1631,7 @@
       curves[s.id] = out;
     });
     var doc = {
-      about: "PodDirector analysis export. Re-plan with: node cli/poddirector.js plan <this file> [--preset lively] [--set key=value]. " +
+      about: "PodCutter analysis export. Re-plan with: node cli/podcutter.js plan <this file> [--preset lively] [--set key=value]. " +
         "Edit `config` (speakers, cameras, preset, style, overrides) and import it back via Settings > Import settings.",
       exportedAt: new Date().toISOString(), engineVersion: D.VERSION,
       sequence: { name: state.seq.name, fps: state.seq.fps, durationSec: state.seq.durationSec },
@@ -1625,7 +1649,7 @@
       result: { calibration: state.result.calibration, stats: state.result.stats, shots: state.result.shots },
       cleanup: state.tx.suggestions.length ? state.tx.suggestions : undefined
     };
-    var file = path.join(state.docsDir, safe(state.seq.name) + ".poddirector.json");
+    var file = path.join(state.docsDir, safe(state.seq.name) + ".podcutter.json");
     fs.writeFileSync(file, JSON.stringify(doc));
     status("Exported to " + file, "ok");
   }
@@ -1935,7 +1959,7 @@
       $("updateStatus").textContent = pending ? "Version " + pending.version + " is available." :
         (r.latest ? "You're up to date." : "No release found.") + (r.errors.length ? " " + r.errors.join(" ") : "");
       if (pending && load("skipVersion", null) !== pending.version) {
-        $("updateText").textContent = "PodDirector " + pending.version + " is available (you have " + D.VERSION + ").";
+        $("updateText").textContent = "PodCutter " + pending.version + " is available (you have " + D.VERSION + ").";
         $("updateBanner").classList.remove("hidden");
       }
       if (r.errors.length) log("Update check: " + r.errors.join(" | "));
@@ -1954,15 +1978,15 @@
       if (r.needsRestart) {
         // The manifest changed (more than its version): Premiere only reads it at startup.
         $("updateStatus").textContent = "Installed " + r.version + ". This update changes how Premiere loads the panel: restart Premiere Pro to finish.";
-        $("updateText").textContent = "PodDirector " + r.version + " is installed. Save your project and restart Premiere Pro to use it.";
+        $("updateText").textContent = "PodCutter " + r.version + " is installed. Save your project and restart Premiere Pro to use it.";
         $("btnUpdateLater").textContent = "OK";
         status("Update installed \u2014 restart Premiere Pro to finish.", "ok", 1);
       } else {
-        $("updateStatus").textContent = "Installed " + r.version + ". Click Reload PodDirector to start using it; no need to restart Premiere.";
-        $("updateText").textContent = "PodDirector " + r.version + " is installed.";
+        $("updateStatus").textContent = "Installed " + r.version + ". Click Reload PodCutter to start using it; no need to restart Premiere.";
+        $("updateText").textContent = "PodCutter " + r.version + " is installed.";
         $("btnReloadBanner").classList.remove("hidden");
         $("btnUpdateLater").textContent = "Later";
-        status("Update installed \u2014 reload PodDirector to use it.", "ok", 1);
+        status("Update installed \u2014 reload PodCutter to use it.", "ok", 1);
       }
       pending = null; $("btnInstallUpdate").disabled = true;
     });
@@ -1989,7 +2013,7 @@
     box.appendChild(el("div", { class: "muted", text: "From " + path.basename(k.file.path) + " (Premiere " + k.file.version + "):" }));
     k.cams.slice(0, 2).forEach(function (c) {
       box.appendChild(el("div", { text: "Cut to Camera " + c.camera + ": " + (c.label || "no shortcut") +
-        (c.label && !c.usable ? " — use a letter, digit or symbol key (with any modifiers) so PodDirector can type it" : "") }));
+        (c.label && !c.usable ? " — use a letter, digit or symbol key (with any modifiers) so PodCutter can type it" : "") }));
     });
   }
 
@@ -2015,7 +2039,7 @@
   /** Cut to Camera keys for these angles, or an error naming the ones that can't be typed. */
   function keysFor(angles) {
     var k = cutKeys();
-    if (!k || !k.file) throw new Error("Couldn't find your Premiere keyboard shortcuts file, so PodDirector doesn't know your Cut to Camera keys.");
+    if (!k || !k.file) throw new Error("Couldn't find your Premiere keyboard shortcuts file, so PodCutter doesn't know your Cut to Camera keys.");
     var map = {}, bad = [];
     angles.forEach(function (a) {
       var c = k.cams[a - 1];
@@ -2041,7 +2065,7 @@
       function tick() {
         if (kbdStop) throw new Error("Stopped before anything was sent.");
         if (n === 0) return null;
-        kbdBanner("click", "Click once in the Timeline now <b>" + n + "</b>", "PodDirector types into whatever has focus. Then hands off until it's done.");
+        kbdBanner("click", "Click once in the Timeline now <b>" + n + "</b>", "PodCutter types into whatever has focus. Then hands off until it's done.");
         opts.say("Click once in the Timeline now… starting in " + n--);
         return wait(1000).then(tick);
       }
@@ -2285,7 +2309,7 @@
    */
   function reloadPanel() {
     if (state.busy) { status("Wait for the current job to finish, then reload.", "err"); return; }
-    status("Reloading PodDirector\u2026", "", 0.5);
+    status("Reloading PodCutter\u2026", "", 0.5);
     if (!inPremiere || !state.extRoot) { location.reload(); return; }
     var jsx = path.join(state.extRoot, "host", "host.jsx").replace(/\\/g, "/");
     cs.evalScript("$.evalFile(new File(" + JSON.stringify(jsx) + "))", function () { location.reload(); });

@@ -1,9 +1,9 @@
 /*
- * PodDirector — self-updater (Windows).
+ * PodCutter — self-updater (Windows).
  *
  * Looks for a newer release in two places:
- *   - GitHub Releases of the PodDirector repo (works when the repo is public)
- *   - an update folder, e.g. a shared network drive, holding PodDirector-x.y.z-Windows.zip files
+ *   - GitHub Releases of the PodCutter repo (works when the repo is public)
+ *   - an update folder, e.g. a shared network drive, holding PodCutter-x.y.z-Windows.zip files
  * and installs it by unzipping the package and running its install.ps1 -Silent, which mirrors
  * the new files over the installed extension. Reopening the panel loads the new files; Premiere only needs
  * a restart when the manifest changed (beyond its version numbers), since it reads that at startup.
@@ -20,7 +20,11 @@
   var fs = req && req("fs"), path = req && req("path"), os = req && req("os"), cp = req && req("child_process"), https = req && req("https");
 
   var DEFAULT_REPO = "memoria-productions/poddirector";
-  var ZIP_RE = /^PodDirector-(\d+\.\d+\.\d+)-Windows\.zip$/i;
+  // PodCutter was called PodDirector up to 0.17. Releases from 0.18 attach the package under both names, because
+  // the updater in installed PodDirector panels only recognises "PodDirector-…"; this one takes either, preferring
+  // the new name.
+  var ZIP_RE = /^Pod(?:Cutter|Director)-(\d+\.\d+\.\d+)-Windows\.zip$/i;
+  function preferNewName(a, b) { return (/^PodCutter-/i.test(b) ? 1 : 0) - (/^PodCutter-/i.test(a) ? 1 : 0); }
 
   function cmp(a, b) {
     var x = String(a).replace(/^v/, "").split("."), y = String(b).replace(/^v/, "").split(".");
@@ -30,7 +34,7 @@
 
   function getJson(url) {
     return new Promise(function (resolve, reject) {
-      var r = https.get(url, { headers: { "User-Agent": "PodDirector-updater", Accept: "application/vnd.github+json" } }, function (res) {
+      var r = https.get(url, { headers: { "User-Agent": "PodCutter-updater", Accept: "application/vnd.github+json" } }, function (res) {
         var body = "";
         res.on("data", function (d) { body += d; });
         res.on("end", function () {
@@ -47,14 +51,15 @@
   /** Latest release on GitHub: { version, url, notes, source } */
   function checkGitHub(repo) {
     return getJson("https://api.github.com/repos/" + (repo || DEFAULT_REPO) + "/releases/latest").then(function (rel) {
-      var asset = (rel.assets || []).filter(function (a) { return ZIP_RE.test(a.name); })[0];
+      var asset = (rel.assets || []).filter(function (a) { return ZIP_RE.test(a.name); })
+        .sort(function (a, b) { return preferNewName(a.name, b.name); })[0];
       if (!asset) throw new Error("The latest release has no Windows package attached yet.");
       return { version: ZIP_RE.exec(asset.name)[1], url: asset.browser_download_url, size: asset.size,
         notes: rel.body || "", page: rel.html_url, source: "GitHub" };
     });
   }
 
-  /** Newest PodDirector-x.y.z-Windows.zip in a folder: { version, file, source } */
+  /** Newest PodCutter-x.y.z-Windows.zip in a folder: { version, file, source } */
   function checkFolder(dir) {
     return new Promise(function (resolve, reject) {
       fs.readdir(dir, function (err, files) {
@@ -62,9 +67,10 @@
         var best = null;
         files.forEach(function (f) {
           var m = ZIP_RE.exec(f);
-          if (m && (!best || cmp(m[1], best.version) > 0)) best = { version: m[1], file: path.join(dir, f), source: "update folder" };
+          if (m && (!best || cmp(m[1], best.version) > 0 || (cmp(m[1], best.version) === 0 && preferNewName(path.basename(best.file), f) > 0)))
+            best = { version: m[1], file: path.join(dir, f), source: "update folder" };
         });
-        if (!best) return reject(new Error("No PodDirector-x.y.z-Windows.zip in " + dir));
+        if (!best) return reject(new Error("No PodCutter-x.y.z-Windows.zip in " + dir));
         resolve(best);
       });
     });
@@ -86,7 +92,7 @@
   function download(url, dest, onProgress, hops) {
     return new Promise(function (resolve, reject) {
       if ((hops || 0) > 5) return reject(new Error("Too many redirects"));
-      https.get(url, { headers: { "User-Agent": "PodDirector-updater" } }, function (res) {
+      https.get(url, { headers: { "User-Agent": "PodCutter-updater" } }, function (res) {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
           return resolve(download(res.headers.location, dest, onProgress, (hops || 0) + 1));
@@ -139,7 +145,7 @@
     if (process.platform !== "win32") return Promise.reject(new Error("Automatic install is only available on Windows."));
     onProgress = onProgress || function () {};
     var work = fs.mkdtempSync(path.join(os.tmpdir(), "poddirector-update-"));
-    var zip = path.join(work, "PodDirector-" + release.version + "-Windows.zip");
+    var zip = path.join(work, "PodCutter-" + release.version + "-Windows.zip");
     var get = release.file
       ? new Promise(function (resolve, reject) { onProgress("copy", 0); fs.copyFile(release.file, zip, function (e) { e ? reject(e) : resolve(zip); }); })
       : download(release.url, zip, function (f) { onProgress("download", f); });
@@ -153,7 +159,9 @@
         .filter(function (f) { return fs.existsSync(path.join(f, "install.ps1")); })[0];
       if (!top) throw new Error("The update package has no installer in it.");
       // Compare manifests before the installer overwrites the old one.
-      if (opts.extensionRoot) restart = needsRestart(path.join(opts.extensionRoot, "CSXS", "manifest.xml"), path.join(top, "PodDirector", "CSXS", "manifest.xml"));
+      // Moving from the old PodDirector folder to PodCutter always needs a restart: Premiere loads panels by folder.
+      if (opts.extensionRoot) restart = path.basename(opts.extensionRoot) !== "PodCutter" ||
+        needsRestart(path.join(opts.extensionRoot, "CSXS", "manifest.xml"), path.join(top, "PodCutter", "CSXS", "manifest.xml"));
       onProgress("install", 0);
       return run(ps, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(top, "install.ps1"), "-Silent"]);
     }).then(function (log) {

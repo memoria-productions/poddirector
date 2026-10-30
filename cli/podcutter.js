@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /*
- * PodDirector CLI — tune cuts offline from an exported analysis, or scan a transcript.
+ * PodCutter CLI — tune cuts offline from an exported analysis, or scan a transcript.
  *
- *   node cli/poddirector.js presets
- *   node cli/poddirector.js plan  <episode.poddirector.json> [--preset lively] [--set minShotSec=3 --set biasDb.S1=3]
+ *   node cli/podcutter.js presets
+ *   node cli/podcutter.js plan  <episode.podcutter.json> [--preset lively] [--set minShotSec=3 --set biasDb.S1=3]
  *                                 [--config cfg.json] [--compare calm,balanced,lively] [--out plan.json] [--shots]
- *   node cli/poddirector.js cleanup <transcript.srt|.vtt|.txt|.json> [--set minConfidence=0.5] [--csv cuts.csv] [--json]
+ *   node cli/podcutter.js cleanup <transcript.srt|.vtt|.txt|.json> [--set minConfidence=0.5] [--csv cuts.csv] [--json]
  *
  * The analysis file comes from the panel: Multicam > "Export analysis for Claude".
  * Edited configs can be imported back into the panel from Settings > Import settings JSON.

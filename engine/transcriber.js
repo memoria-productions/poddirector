@@ -1,5 +1,5 @@
 /*
- * PodDirector — offline transcription (bundled whisper.cpp).
+ * PodCutter — offline transcription (bundled whisper.cpp).
  *
  * Mixes the speaker mic tracks of the timeline into one 16 kHz mono WAV in
  * sequence time (ffmpeg), runs the bundled whisper-cli on it, and returns
