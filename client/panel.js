@@ -166,6 +166,7 @@
     return p.then(function (info) {
       var changed = !state.seq || state.seq.sequenceID !== info.sequenceID;
       state.seq = expandNests(info);
+      tagLenses(state.seq);
       forgetDeletedCopy(info.sequenceID);
       forgetUndoneMulticam(info.sequenceID);
       $("seqLabel").textContent = info.name + " · " + info.fps.toFixed(2) + " fps · " + fmt(info.durationSec);
@@ -201,6 +202,8 @@
           ", so PodCutter reads them there: " + state.config.cameras.filter(function (c) { return c.angle; }).map(function (c) { return c.name + " = angle " + c.angle; }).join(", ") + ".");
         log("Cameras switched to the nest's angles (their stacked tracks were empty).");
       }
+      var wideFix = enforceWide();
+      if (wideFix) { saveConfig(); setNote(($("setupNote").textContent ? $("setupNote").textContent + " " : "") + wideFix); log(wideFix); }
       var fixedN = fixChannels(state.config, info);
       if (fixedN) {
         saveConfig();
@@ -237,6 +240,57 @@
     });
     return info;
   }
+  // ------------------------------------------------------- the wide by lens
+  // The static wide is always shot on the 24-70 (the solos on the 70-200), but which track or multicam angle it
+  // lands on varies. Sony's metadata names the lens, so each camera track is tagged with it at Scan.
+  var WIDE_LENS = /24-70/;
+  function tagLenses(info) {
+    if (!hasNode || !A.lensOf) return;
+    info.videoTracks.forEach(function (v) {
+      if (v.nestOuter) return;
+      var lenses = {};
+      (v.mediaPaths || []).slice(0, 3).forEach(function (m) { var l = A.lensOf(m); if (l) lenses[l] = (lenses[l] || 0) + 1; });
+      var best = null; Object.keys(lenses).forEach(function (l) { if (!best || lenses[l] > lenses[best]) best = l; });
+      v.lens = best;
+      if (best) log((v.virtual ? "Multicam angle " + v.angle : "V" + (v.index + 1)) + " was shot on the " + best + ".");
+    });
+  }
+  /** The enabled camera on the 24-70, when exactly one is. */
+  function lensWide() {
+    var hits = state.config.cameras.filter(function (c) { var t = vtrack(c.videoTrack); return c.enabled !== false && t && t.lens && WIDE_LENS.test(t.lens); });
+    return hits.length === 1 ? hits[0] : null;
+  }
+  /** The wide: the 24-70 camera, else the bottom camera that shows everyone. */
+  function wideCam() {
+    var w = lensWide();
+    if (w) return w;
+    var cams = state.config.cameras.filter(function (c) { return c.enabled !== false && !c.follows; }).sort(function (a, b) { return angleOfCam(a) - angleOfCam(b); });
+    return cams.filter(function (c) { return c.shows.length && c.shows.length >= state.config.speakers.length; })[0] || cams[0] || null;
+  }
+  /**
+   * At Scan: make the 24-70 camera the static wide (everyone, no movement check, not following), whatever track
+   * or angle it's on. With two cameras, the other one is then the operated dolly. Returns a note, or null.
+   */
+  function enforceWide() {
+    var wide = lensWide();
+    if (!wide || !state.config.speakers.length) return null;
+    var all = state.config.speakers.map(function (s) { return s.id; }), notes = [];
+    if (wide.follows || wide.moving || !wide.static || wide.shows.length !== all.length) {
+      wide.shows = all.slice(); wide.follows = false; wide.moving = false; wide.static = true;
+      notes.push("“" + wide.name + "” is the static wide");
+    }
+    var others = state.config.cameras.filter(function (c) { return c !== wide && c.enabled !== false; });
+    // Set as a second wide, or (three or more people) as a close-up of one of them: it's the operated camera.
+    var o1 = others.length === 1 ? others[0] : null;
+    if (o1 && all.length > 1 && !o1.follows && (o1.shows.length === all.length || (all.length > 2 && !o1.static))) {
+      o1.follows = true; o1.moving = true; o1.static = false; o1.shows = [];
+      notes.push("“" + o1.name + "” follows the speaker with Check for movement on");
+    }
+    if (!notes.length) return null;
+    var t = vtrack(wide.videoTrack);
+    return "Shot on the " + t.lens + ", so " + notes.join("; ") + ".";
+  }
+
   function vtrackIn(info, idx) { return info.videoTracks.filter(function (v) { return v.index === idx; })[0] || null; }
   function vtrack(idx) { return state.seq ? vtrackIn(state.seq, idx) : null; }
   function nestAngleTracks() { return state.seq ? state.seq.videoTracks.filter(function (v) { return v.virtual; }) : []; }
@@ -679,8 +733,11 @@
       if (cm.static) role = "static " + role;
       if (cm.moving) role += " \u00B7 movement check";
       var isBottom = cm.enabled !== false && cm.videoTrack < NEST_BASE && !state.config.cameras.some(function (o) { return o !== cm && o.enabled !== false && o.videoTrack < cm.videoTrack; });
-      if (isBottom && state.config.cameras.length > 1 && load("layered", true) !== false) role += " \u00B7 bottom, kept whole";
+      var lw = lensWide();
+      if (isBottom && state.config.cameras.length > 1 && load("layered", true) !== false && (!lw || lw === cm)) role += " \u00B7 bottom, kept whole";
       if (cm.videoTrack >= NEST_BASE) role += " \u00B7 multicam angle " + (cm.angle || (cm.videoTrack - NEST_BASE) % 16);
+      var lensT = vtrack(cm.videoTrack);
+      if (lensT && lensT.lens) role += " \u00B7 " + (lensT.lens.match(/\d+-\d+mm|\d+mm/) || [lensT.lens])[0];
       var vt = state.seq && state.seq.videoTracks.filter(function (v) { return v.index === cm.videoTrack; })[0];
       if (vt && vt.hidden && cm.enabled !== false) role += " \u00B7 eye off in the sequence (the cut turns it on)";
       row.appendChild(el("div", { class: "row-main" }, [
@@ -744,7 +801,10 @@
       var spk = state.config.speakers.filter(function (s) { return s.enabled !== false; });
       var v1 = state.config.cameras.filter(function (c) { return c.enabled !== false && c.videoTrack === 0; })[0];
       var t0 = q.videoTracks.filter(function (v) { return v.index === 0; })[0];
-      if (!v1) problems.push(t0 && t0.clipCount ? "No camera is set to V1." : "V1 is empty: there's no footage on the bottom video track.");
+      var lw = lensWide();
+      // A 24-70 on V1 was set up as the static wide at Scan; elsewhere it can't be kept whole under the others.
+      if (lw) { if (lw.videoTrack !== 0) problems.push("The 24-70 wide (“" + lw.name + "”) is on V" + (lw.videoTrack + 1) + ", so builds cut every camera track instead of keeping the wide whole."); }
+      else if (!v1) problems.push(t0 && t0.clipCount ? "No camera is set to V1." : "V1 is empty: there's no footage on the bottom video track.");
       else {
         if (v1.follows) problems.push("“" + v1.name + "” on V1 is set to follow the speaker.");
         else if (v1.shows.length < spk.length) problems.push("“" + v1.name + "” on V1 isn't set as the wide (tick everyone on it).");
@@ -1563,7 +1623,13 @@
     if (blindCameras().length) throw new Error(blindMessage(blindCameras()));
     if (usesNest()) throw new Error("Your cameras are angles inside a multicam nest: use Build as multicam. (Build cut on a copy and Recut switch stacked camera tracks.)");
     var cams = state.config.cameras.filter(function (c) { return c.enabled !== false; });
-    return D.toEditPayload(state.result, cams, state.seq.fps, { layered: load("layered", true) !== false });
+    // The layered cut keeps the bottom camera whole; if the 24-70 wide is higher up it would cover the rest, so cut every track.
+    var wide = lensWide(), layered = load("layered", true) !== false;
+    if (layered && wide && cams.some(function (c) { return c.videoTrack < wide.videoTrack; })) {
+      layered = false;
+      log("The wide (“" + wide.name + "”, 24-70) isn't the bottom camera, so every camera track is cut (not layered).");
+    }
+    return D.toEditPayload(state.result, cams, state.seq.fps, { layered: layered });
   }
 
   var applyCut = guard(function () {
@@ -2242,7 +2308,8 @@
         if (!rec.history.length) throw new Error("No multicam build of this sequence to undo.");
         var last = rec.history[rec.history.length - 1], prev = rec.history[rec.history.length - 2];
         startSec = last.startSec; endSec = last.endSec; partial = last.partial;
-        desired = prev ? prev.desired : [{ sec: startSec, camera: 1 }];
+        var wc = wideCam();
+        desired = prev ? prev.desired : [{ sec: startSec, camera: wc ? angleOfCam(wc) : 1 }];
         step("undo on “" + seqId + "”: " + rec.history.length + " build(s) kept; restoring " +
           (prev ? "the build from " + (prev.at || "earlier") : "the wide everywhere") + " between " + fmt(startSec) + " and " + fmt(endSec));
       } else {

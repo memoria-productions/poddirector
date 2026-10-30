@@ -391,3 +391,20 @@ test("handoff wide: the wide around a change of speaker, the solo once they've s
   const off = D.plan(input, { speakers, cameras: cams, preset: "handoff", style: { openOnWideSec: 0, soloAfterSec: 0, wideLeadSec: 0 } });
   assert.equal(at(off, 39).cameraId, "F", "soloAfterSec 0: straight to the solo");
 });
+
+test("the lens comes from the Sony sidecar, or the same XML inside the camera file", () => {
+  const A = require("../engine/analyzer.js");
+  const fs = require("fs"), os = require("os"), path = require("path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pd-lens-"));
+  const xml = (lens) => `<?xml version="1.0"?><NonRealTimeMeta><Device manufacturer="Sony" modelName="ILCE-7SM3"/><Lens modelName="${lens}"/></NonRealTimeMeta>`;
+  const wide = path.join(dir, "C0001.MP4"), dolly = path.join(dir, "C0002.MP4"), bare = path.join(dir, "C0003.MP4");
+  fs.writeFileSync(wide, Buffer.alloc(1000));
+  fs.writeFileSync(path.join(dir, "C0001M01.XML"), xml("24-70mm F2.8 DG DN | Art 019"));
+  // No sidecar (copied without it): the XML Sony also writes near the end of the MP4.
+  fs.writeFileSync(dolly, Buffer.concat([Buffer.alloc(5000), Buffer.from(xml("70-200mm F2.8 DG DN OS | Sports"), "latin1"), Buffer.alloc(300)]));
+  fs.writeFileSync(bare, Buffer.alloc(2000));
+  assert.equal(A.lensOf(wide), "24-70mm F2.8 DG DN | Art 019");
+  assert.equal(A.lensOf(dolly), "70-200mm F2.8 DG DN OS | Sports");
+  assert.equal(A.lensOf(bare), null);
+  assert.equal(A.lensOf(path.join(dir, "missing.MP4")), null);
+});

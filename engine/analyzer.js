@@ -280,6 +280,30 @@
     }, Promise.resolve()).then(function () { return curve; });
   }
 
+  /**
+   * The lens a camera file was shot with, from Sony's metadata (<Lens modelName="...">): the sidecar
+   * <clip>M01.XML first, else the same XML embedded near the end (or start) of the file. null if not found.
+   */
+  var lensCache = {};
+  function lensFromXml(text) { var m = /<Lens modelName="([^"]*)"/.exec(text || ""); return m ? m[1] : null; }
+  function lensOf(mediaPath) {
+    if (!fs || !mediaPath) return null;
+    if (lensCache[mediaPath] !== undefined) return lensCache[mediaPath];
+    var lens = null;
+    try { lens = lensFromXml(fs.readFileSync(mediaPath.replace(/\.[a-z0-9]+$/i, "M01.XML"), "utf8")); } catch (e) { lens = null; }
+    if (!lens) {
+      var fd = null;
+      try {
+        fd = fs.openSync(mediaPath, "r");
+        var size = fs.fstatSync(fd).size, N = Math.min(size, 4 << 20), buf = Buffer.alloc(N);
+        [Math.max(0, size - N), 0].some(function (pos) { fs.readSync(fd, buf, 0, N, pos); lens = lensFromXml(buf.toString("latin1")); return !!lens; });
+      } catch (e2) { lens = null; }
+      if (fd !== null) try { fs.closeSync(fd); } catch (e3) { /* ignore */ }
+    }
+    lensCache[mediaPath] = lens;
+    return lens;
+  }
+
   /** Run tasks (functions returning promises) with a concurrency limit. */
   function pool(tasks, limit) {
     var results = new Array(tasks.length), next = 0;
@@ -296,7 +320,7 @@
   return {
     RATE: RATE, DEFAULT_HOP: DEFAULT_HOP,
     findFfmpeg: findFfmpeg, analyzeRange: analyzeRange, audioLayout: audioLayout, locateChannel: locateChannel, parseLayout: parseLayout, analyzeTrack: analyzeTrack,
-    pool: pool, clearCache: clearCache,
+    pool: pool, clearCache: clearCache, lensOf: lensOf, lensFromXml: lensFromXml,
     ffmpegPath: function () { return state.ffmpeg; }
   };
 });

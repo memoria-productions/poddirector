@@ -100,6 +100,10 @@
 - **Dolly stays on the last person until it moves** (when there is no Who's in the shot reading), and a follow-cam shot that runs across a change of speaker is checked against whoever has the floor at each moment.
 - **Picture names checked by voice:** a long steady dolly stretch named after someone silent while another person talks is treated as on the talker. A follow-cam shot spanning several speakers is split per speaker, so monologue cutaways measure one person's turn. A brief aside over someone who carries on isn't crosstalk.
 
+## v0.19 (added)
+
+- **The 24-70 is always the wide.** Scan reads each camera's lens from Sony's metadata (the sidecar, or the copy inside the MP4) and sets the 24-70 camera up as the static wide, on whichever track or multicam angle it lands; with two cameras the other becomes the follow cam with Check for movement. Camera rows show the lens. Undo multicam cut goes back to the wide's angle (was always camera 1). A stacked 24-70 above V1 is warned about and built unlayered.
+
 ## v0.18.2 (added)
 
 - **"Recut multicam" only when the build is really there.** Scan checks that the cuts of the last multicam build are still on the timeline. If they're gone (undone in Premiere, assembled again, or a new sequence that shares an ID with one built before), the record is dropped and the button reads Build as multicam.
